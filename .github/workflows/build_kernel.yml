@@ -1,0 +1,71 @@
+name: Build GKI Kernel (bangkk / holi)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      OUT_DIR: out
+      LLVM: 1
+      LLVM_IAS: 1
+      CC: clang
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CROSS_COMPILE_COMPAT: arm-linux-gnueabi-
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison build-essential curl flex git gnupg \
+            libssl-dev libelf-dev lld llvm clang \
+            python3 python3-pip unzip zip
+
+      - name: Clean source tree
+        run: |
+          make mrproper
+          rm -rf ${OUT_DIR}
+          mkdir -p ${OUT_DIR}
+
+      - name: Generate kernel config (GKI + holi + bangkk)
+        run: |
+          scripts/kconfig/merge_config.sh \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/vendor/holi_GKI.config \
+            arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
+
+          # Désactiver explicitement FTS (écran non FTS)
+          echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> .config
+
+          make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
+
+      - name: Build kernel (Image only)
+        run: |
+          make -j$(nproc) \
+            O=${OUT_DIR} \
+            ARCH=${ARCH} \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            Image
+
+      - name: Verify output
+        run: |
+          ls -lh ${OUT_DIR}/arch/arm64/boot/Image
+          file ${OUT_DIR}/arch/arm64/boot/Image
+
+      - name: Upload kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-gki-bangkk
+          path: |
+            out/arch/arm64/boot/Image
