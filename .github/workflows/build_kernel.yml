@@ -37,6 +37,7 @@ jobs:
           mkdir -p ${OUT_DIR}
 
 
+
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
@@ -46,17 +47,23 @@ jobs:
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # Désactivation drivers invalides pour bangkk
+          # --- FIX CRITIQUE : éliminer KEYS / ASYMMETRIC_KEYS ---
+          KCONFIG_CONFIG=${OUT_DIR}/.config \
+          scripts/kconfig/merge_config.sh -d \
+            CONFIG_KEYS \
+            CONFIG_ASYMMETRIC_KEYS \
+            CONFIG_SYSTEM_TRUSTED_KEYRING \
+            CONFIG_SYSTEM_REVOCATION_KEYRING \
+            CONFIG_INTEGRITY_SIGNATURE \
+            CONFIG_MODULE_SIG \
+            CONFIG_MODULE_SIG_ALL \
+            CONFIG_SYSTEM_EXTRA_CERTIFICATE
+
+          # Désactivation spécifique bangkk
           echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> ${OUT_DIR}/.config
 
-          # Fix GKI / KEYS (CRITIQUE)
-          echo "CONFIG_KEYS=n" >> ${OUT_DIR}/.config
-          echo "CONFIG_ASYMMETRIC_KEYS=n" >> ${OUT_DIR}/.config
-          echo "CONFIG_SYSTEM_TRUSTED_KEYRING=n" >> ${OUT_DIR}/.config
-          echo "CONFIG_SYSTEM_REVOCATION_KEYRING=n" >> ${OUT_DIR}/.config
-          echo "CONFIG_INTEGRITY_SIGNATURE=n" >> ${OUT_DIR}/.config
-
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
+
       - name: Build kernel (Image only)
         run: |
           make -j$(nproc) \
