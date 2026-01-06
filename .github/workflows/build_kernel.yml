@@ -28,9 +28,9 @@ jobs:
           sudo apt install -y \
             bc bison build-essential curl flex git gnupg \
             libssl-dev libelf-dev lld llvm clang \
-            python3 python3-pip unzip zip
+            python3 unzip zip
 
-      - name: Clean source tree
+      - name: Prepare clean output directory
         run: |
           make mrproper
           rm -rf ${OUT_DIR}
@@ -38,14 +38,19 @@ jobs:
 
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
-          scripts/kconfig/merge_config.sh \
-            arch/arm64/configs/gki_defconfig \
+          # Initialiser la config GKI dans out/
+          make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
+
+          # Fusionner les configs Motorola SANS toucher au tree source
+          KCONFIG_CONFIG=${OUT_DIR}/.config \
+          scripts/kconfig/merge_config.sh -m \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
           # Désactiver explicitement FTS (écran non FTS)
-          echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> .config
+          echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> ${OUT_DIR}/.config
 
+          # Normalisation finale
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
 
       - name: Build kernel (Image only)
