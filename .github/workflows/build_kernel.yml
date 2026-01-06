@@ -35,6 +35,11 @@ jobs:
           make mrproper
           rm -rf ${OUT_DIR}
           mkdir -p ${OUT_DIR}
+      
+
+      - name: Verify KEYS config
+        run: |
+          grep -E "KEYS|ASYMMETRIC" ${OUT_DIR}/.config || true
 
 
 
