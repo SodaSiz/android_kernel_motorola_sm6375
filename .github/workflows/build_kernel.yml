@@ -43,45 +43,36 @@ jobs:
 
 
 
+
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
 
-          cat > disable_keys.config <<'EOF'
-            # Disable keyrings / asymmetric keys (required for clang)
-            # CONFIG_KEYS is not set
-            # CONFIG_ASYMMETRIC_KEYS is not set
-            # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
-            # CONFIG_SYSTEM_REVOCATION_KEYRING is not set
-            # CONFIG_INTEGRITY_SIGNATURE is not set
-            # CONFIG_MODULE_SIG is not set
-            # CONFIG_MODULE_SIG_ALL is not set
-            # CONFIG_SYSTEM_EXTRA_CERTIFICATE is not set
-          EOF
-
-
-          KCONFIG_CONFIG=${OUT_DIR}/.config \
           scripts/kconfig/merge_config.sh -m \
+            ${OUT_DIR}/.config \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # --- FIX CRITIQUE : éliminer KEYS / ASYMMETRIC_KEYS ---
-          KCONFIG_CONFIG=${OUT_DIR}/.config \
-          scripts/kconfig/merge_config.sh -d \
-            CONFIG_KEYS \
-            CONFIG_ASYMMETRIC_KEYS \
-            CONFIG_SYSTEM_TRUSTED_KEYRING \
-            CONFIG_SYSTEM_REVOCATION_KEYRING \
-            CONFIG_INTEGRITY_SIGNATURE \
-            CONFIG_MODULE_SIG \
-            CONFIG_MODULE_SIG_ALL \
-            CONFIG_SYSTEM_EXTRA_CERTIFICATE
+          # Fragment de désactivation KEYS (CRITIQUE)
+          cat > disable_keys.config <<'EOF'
+          # CONFIG_KEYS is not set
+          # CONFIG_ASYMMETRIC_KEYS is not set
+          # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
+          # CONFIG_SYSTEM_REVOCATION_KEYRING is not set
+          # CONFIG_INTEGRITY_SIGNATURE is not set
+          # CONFIG_MODULE_SIG is not set
+          # CONFIG_MODULE_SIG_ALL is not set
+          # CONFIG_SYSTEM_EXTRA_CERTIFICATE is not set
+          EOF
 
-          # Désactivation spécifique bangkk
-          echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> ${OUT_DIR}/.config
+          scripts/kconfig/merge_config.sh -m \
+            ${OUT_DIR}/.config \
+            disable_keys.config
+
+          # Désactivation écran FTS (bangkk = Goodix)
+          echo "# CONFIG_TOUCHSCREEN_FTS_V3 is not set" >> ${OUT_DIR}/.config
 
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
-
       - name: Build kernel (Image only)
         run: |
           make -j$(nproc) \
