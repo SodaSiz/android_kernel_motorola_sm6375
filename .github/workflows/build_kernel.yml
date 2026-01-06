@@ -36,23 +36,27 @@ jobs:
           rm -rf ${OUT_DIR}
           mkdir -p ${OUT_DIR}
 
+
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
-          # Initialiser la config GKI dans out/
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
 
-          # Fusionner les configs Motorola SANS toucher au tree source
           KCONFIG_CONFIG=${OUT_DIR}/.config \
           scripts/kconfig/merge_config.sh -m \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # Désactiver explicitement FTS (écran non FTS)
+          # Désactivation drivers invalides pour bangkk
           echo "CONFIG_TOUCHSCREEN_FTS_V3=n" >> ${OUT_DIR}/.config
 
-          # Normalisation finale
-          make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
+          # Fix GKI / KEYS (CRITIQUE)
+          echo "CONFIG_KEYS=n" >> ${OUT_DIR}/.config
+          echo "CONFIG_ASYMMETRIC_KEYS=n" >> ${OUT_DIR}/.config
+          echo "CONFIG_SYSTEM_TRUSTED_KEYRING=n" >> ${OUT_DIR}/.config
+          echo "CONFIG_SYSTEM_REVOCATION_KEYRING=n" >> ${OUT_DIR}/.config
+          echo "CONFIG_INTEGRITY_SIGNATURE=n" >> ${OUT_DIR}/.config
 
+          make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
       - name: Build kernel (Image only)
         run: |
           make -j$(nproc) \
