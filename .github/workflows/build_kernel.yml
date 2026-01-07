@@ -13,8 +13,6 @@ jobs:
       LLVM: 1
       LLVM_IAS: 1
       CC: clang
-      CROSS_COMPILE: aarch64-linux-gnu-
-      CROSS_COMPILE_COMPAT: arm-linux-gnueabi-
 
     steps:
       - name: Checkout kernel source
@@ -30,30 +28,42 @@ jobs:
             libssl-dev libelf-dev lld llvm clang \
             python3 unzip zip
 
-      - name: Prepare clean output directory
+      # 🔥 IMPORTANT : on ne touche PAS au source tree
+      - name: Prepare output directory
         run: |
-          make mrproper
           rm -rf ${OUT_DIR}
           mkdir -p ${OUT_DIR}
-      
-
-      - name: Verify KEYS config
-        run: |
-          grep -E "KEYS|ASYMMETRIC" ${OUT_DIR}/.config || true
 
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
-          # 1) Base GKI dans OUT_DIR uniquement
+          set -e
+
+          # 1️⃣ Base GKI
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
 
-          # 2) Merge holi + bangkk
+          # 2️⃣ Merge Holi SoC
           scripts/kconfig/merge_config.sh -m \
             ${OUT_DIR}/.config \
-            arch/arm64/configs/vendor/holi_GKI.config \
+            arch/arm64/configs/vendor/holi_GKI.config
+
+          # 3️⃣ Merge device config
+          scripts/kconfig/merge_config.sh -m \
+            ${OUT_DIR}/.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # 3) Désactivation KEYS (clang fix)
-          cat > disable_keys.config <<'EOF'
+          # 4️⃣ Désactiver complètement FTS (écran non compatible)
+          sed -i \
+            -e 's/^CONFIG_TOUCHSCREEN_FTS.*/# CONFIG_TOUCHSCREEN_FTS is not set/' \
+            -e 's/^CONFIG_TOUCHSCREEN_FTS_V3.*/# CONFIG_TOUCHSCREEN_FTS_V3 is not set/' \
+            ${OUT_DIR}/.config
+
+          # 5️⃣ S'assurer que Goodix est bien activé
+          sed -i \
+            's/^# CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI is not set/CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI=m/' \
+            ${OUT_DIR}/.config
+
+          # 6️⃣ Désactivation KEYS / signatures (clang + GKI safe)
+          cat >> ${OUT_DIR}/.config <<'EOF'
           # CONFIG_KEYS is not set
           # CONFIG_ASYMMETRIC_KEYS is not set
           # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
@@ -61,28 +71,19 @@ jobs:
           # CONFIG_INTEGRITY_SIGNATURE is not set
           # CONFIG_MODULE_SIG is not set
           # CONFIG_MODULE_SIG_ALL is not set
-          # CONFIG_SYSTEM_EXTRA_CERTIFICATE is not set
           EOF
 
-          scripts/kconfig/merge_config.sh -m \
-            ${OUT_DIR}/.config \
-            disable_keys.config
-
-          # 4) Forcer écran Goodix (pas FTS)
-          sed -i 's/CONFIG_TOUCHSCREEN_FTS_V3=m/# CONFIG_TOUCHSCREEN_FTS_V3 is not set/' ${OUT_DIR}/.config
-
-          # 5) Normalisation finale
+          # 7️⃣ Normalisation finale (OBLIGATOIRE)
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
-          
-      - name: Verify critical config
+
+      - name: Verify final config
         run: |
-          echo "==== KEYS ===="
-          grep CONFIG_KEYS ${OUT_DIR}/.config || true
-          echo "==== TOUCH ===="
+          echo "==== TOUCHSCREEN ===="
           grep TOUCHSCREEN ${OUT_DIR}/.config || true
+          echo "==== KEYS ===="
+          grep KEYS ${OUT_DIR}/.config || true
 
-
-      - name: Build kernel (Image only)
+      - name: Build kernel Image (GKI)
         run: |
           make -j$(nproc) \
             O=${OUT_DIR} \
@@ -101,5 +102,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernel-gki-bangkk
-          path: |
-            out/arch/arm64/boot/Image
+          path: out/arch/arm64/boot/Image
