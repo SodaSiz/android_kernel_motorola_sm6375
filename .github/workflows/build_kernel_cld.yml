@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # Version stable pour la compilation kernel
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
@@ -13,72 +13,74 @@ jobs:
       - name: Setup Build Env
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison gperf libssl-dev libcrypto++-dev libncurses5-dev libncurses-dev python3-minimal zip
+          sudo apt-get install -y bc build-essential flex bison gperf libssl-dev libcrypto++-dev libncurses5-dev libncurses-dev python3-minimal zip python2
 
-      - name: Setup Toolchain
+      - name: Setup Toolchain (AOSP Clang)
         run: |
-          mkdir clang
+          mkdir -p clang
           cd clang
-          # Utilisation de Proton Clang pour une meilleure compatibilité
-          # curl -LO https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
-          # À remplacer dans l'étape Setup Toolchain si besoin
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r487747c.tar.gz
-          tar -xf master.tar.gz
-          echo "$(pwd)/proton-clang-master/bin" >> $GITHUB_PATH
+          # Téléchargement de Clang r487747c (standard pour Android 13/14)
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
+          tar -xf clang-r487747c.tar.gz
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Setup GCC (Aarch64 & Arm32)
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Build Kernel
         run: |
+          # Variables d'environnement
           export ARCH=arm64
           export SUBARCH=arm64
+          export PATH="$(pwd)/clang/bin:$PATH"
+          export KBUILD_BUILD_USER="Gemini"
+          export KBUILD_BUILD_HOST="GitHub-Actions"
           
-          # Chemins vers la toolchain
-          CLANG_DIR=$(pwd)/clang/proton-clang-master
-          export PATH="$CLANG_DIR/bin:$PATH"
-          
-          # Variables de compilation
-          # On force HOSTCC et HOSTCXX sur le GCC du système pour éviter l'erreur libc
-          make O=out \
-               ARCH=arm64 \
-               CC=clang \
-               HOSTCC=gcc \
-               HOSTCXX=g++ \
-               CROSS_COMPILE=aarch64-linux-gnu- \
-               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-               NM=llvm-nm \
-               OBJCOPY=llvm-objcopy \
-               OBJDUMP=llvm-objdump \
-               STRIP=llvm-strip \
-               vendor/holi-qgki_defconfig
+          # Paramètres de compilation pour éviter les erreurs de linker
+          MAKE_PARAMS=(
+              O=out
+              ARCH=arm64
+              CC=clang
+              HOSTCC=gcc
+              HOSTCXX=g++
+              CROSS_COMPILE=aarch64-linux-gnu-
+              CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+              LD=ld.lld
+              AR=llvm-ar
+              NM=llvm-nm
+              OBJCOPY=llvm-objcopy
+              OBJDUMP=llvm-objdump
+              STRIP=llvm-strip
+          )
 
-          # Fusion du fragment Moto G84
+          # 1. Configuration de base
+          make "${MAKE_PARAMS[@]}" vendor/holi-qgki_defconfig
+          
+          # 2. Fusion avec le fragment Moto G84
           ./scripts/kconfig/merge_config.sh -O out out/.config arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
-
-          # Lancement de la compilation
-          make -j$(nproc --all) O=out \
-               ARCH=arm64 \
-               CC=clang \
-               HOSTCC=gcc \
-               HOSTCXX=g++ \
-               CROSS_COMPILE=aarch64-linux-gnu- \
-               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-               NM=llvm-nm \
-               OBJCOPY=llvm-objcopy \
-               OBJDUMP=llvm-objdump \
-               STRIP=llvm-strip         
-          # 3. Compilation
-          make -j$(nproc --all) O=out
+          
+          # 3. Compilation réelle
+          make -j$(nproc --all) "${MAKE_PARAMS[@]}"
 
       - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
-          cp out/arch/arm64/boot/Image.gz AnyKernel3/
-          # Ajustement du script AnyKernel pour Motorola
+          # Vérification de l'image (Image.gz ou Image)
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            cp out/arch/arm64/boot/Image.gz AnyKernel3/
+          else
+            cp out/arch/arm64/boot/Image AnyKernel3/
+          fi
+          
+          # Configuration du script de flash
           sed -i 's/device.name1=/device.name1=bangkk/g' AnyKernel3/anykernel.sh
-          sed -i 's/block=/block=\/dev\/block\/bootdevice\/by-name\/boot/g' AnyKernel3/anykernel.sh
-          cd AnyKernel3 && zip -r9 ../Kernel-Moto-G84.zip *
+          sed -i 's|block=|block=/dev/block/bootdevice/by-name/boot|g' AnyKernel3/anykernel.sh
+          
+          cd AnyKernel3 && zip -r9 ../Kernel-Moto-G84-Flashable.zip *
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Flashable-G84
-          path: Kernel-Moto-G84.zip
+          name: Kernel-Moto-G84
+          path: Kernel-Moto-G84-Flashable.zip
