@@ -19,11 +19,10 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-          # Téléchargement de Clang r487747c (standard pour Android 13/14)
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
-          tar -xf clang-r487747c.tar.gz
+          # Utilisation d'un miroir GitHub fiable pour Clang r487747c
+          # C'est beaucoup plus rapide et évite les erreurs 400
+          git clone https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r487747c.git --depth=1 .
           echo "$(pwd)/bin" >> $GITHUB_PATH
-
       - name: Setup GCC (Aarch64 & Arm32)
         run: |
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
