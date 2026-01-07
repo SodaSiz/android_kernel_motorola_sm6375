@@ -21,7 +21,7 @@ on:
 jobs:
   build:
     name: Build Vanilla Kernel + Modules
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Use Ubuntu 22.04 for better toolchain compatibility
     
     steps:
       - name: Checkout Kernel Source
@@ -68,8 +68,12 @@ jobs:
         run: |
           mkdir -p toolchain
           cd toolchain
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
-          echo "Toolchain cloned successfully"
+          
+          # Use Zyc Clang - more recent and compatible with Ubuntu 22.04+
+          echo "Downloading Zyc Clang (more recent than Proton)..."
+          git clone --depth=1 https://github.com/ZyCromerZ/Clang.git -b 19 clang
+          
+          echo "✅ Toolchain cloned successfully"
           
       - name: Display Toolchain Info
         run: |
