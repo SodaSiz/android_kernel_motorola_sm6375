@@ -20,7 +20,9 @@ jobs:
           mkdir clang
           cd clang
           # Utilisation de Proton Clang pour une meilleure compatibilité
-          curl -LO https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
+          # curl -LO https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
+          # À remplacer dans l'étape Setup Toolchain si besoin
+curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r487747c.tar.gz
           tar -xf master.tar.gz
           echo "$(pwd)/proton-clang-master/bin" >> $GITHUB_PATH
 
