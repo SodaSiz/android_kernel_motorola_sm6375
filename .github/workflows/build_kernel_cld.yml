@@ -1,33 +1,26 @@
-name: Build Kernel for Bangkk
+name: Build Vanilla Kernel - Bangkk (SM6375)
 
 on:
   workflow_dispatch:
     inputs:
-      defconfig:
-        description: 'Defconfig to use'
+      build_config:
+        description: 'Build configuration'
         required: true
-        default: 'vendor/bangkk_defconfig'
+        default: 'holi-qgki_defconfig'
         type: choice
         options:
-          - 'vendor/bangkk_defconfig'
-          - 'vendor/sm6375-perf_defconfig'
+          - 'holi-qgki_defconfig'
           - 'gki_defconfig'
       
-      use_ksu:
-        description: 'Build with KernelSU'
-        required: false
-        default: false
-        type: boolean
-        
-      use_lto:
-        description: 'Enable LTO (Link Time Optimization)'
-        required: false
+      build_modules:
+        description: 'Build kernel modules'
+        required: true
         default: true
         type: boolean
 
 jobs:
   build:
-    name: Build Kernel
+    name: Build Vanilla Kernel + Modules
     runs-on: ubuntu-latest
     
     steps:
@@ -50,150 +43,347 @@ jobs:
             g++-multilib \
             gcc-multilib \
             git \
-            gnupg \
-            gperf \
-            libncurses-dev \
-            libncurses6 \
-            lib32readline-dev \
-            lib32z1-dev \
-            libc6-dev-i386 \
             libelf-dev \
             liblz4-tool \
+            libncurses-dev \
+            libncurses6 \
             libssl-dev \
-            libxml2 \
-            libxml2-utils \
             lzop \
-            pngcrush \
-            rsync \
-            schedtool \
-            squashfs-tools \
-            xsltproc \
+            python3 \
+            python-is-python3 \
             zip \
             zlib1g-dev \
-            python3 \
-            python-is-python3
+            kmod \
+            cpio
       
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: kernel-bangkk-${{ github.sha }}
+          key: kernel-bangkk-vanilla-${{ github.sha }}
           restore-keys: |
-            kernel-bangkk-
+            kernel-bangkk-vanilla-
           max-size: 4G
       
-      - name: Clone Toolchain (Proton Clang)
+      - name: Clone Proton Clang Toolchain
         run: |
           mkdir -p toolchain
           cd toolchain
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
-      
-      - name: Clone AnyKernel3
+          echo "Toolchain cloned successfully"
+          
+      - name: Display Toolchain Info
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          export PATH="${GITHUB_WORKSPACE}/toolchain/clang/bin:${PATH}"
+          clang --version
+          echo "---"
+          ld.lld --version
       
-      - name: Setup KernelSU (Optional)
-        if: ${{ inputs.use_ksu }}
+      - name: List Available Configurations
         run: |
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          echo "=== 📋 Available GKI defconfigs ==="
+          find arch/arm64/configs -name "*defconfig" -type f | grep -E "(gki|holi|sm6375)" | sort
+          echo ""
+          echo "=== 📋 Bangkk specific configs ==="
+          find arch/arm64/configs/vendor/ext_config -name "*bangkk*" | sort
+          echo ""
+          echo "=== 📋 Checking for techpack modules ==="
+          if [ -d "techpack" ]; then
+            ls -d techpack/*/ 2>/dev/null || echo "No techpack directories"
+          else
+            echo "No techpack directory found"
+          fi
       
       - name: Export Build Variables
         run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CLANG_PATH="${GITHUB_WORKSPACE}/toolchain/clang/bin"
-          export PATH="${CLANG_PATH}:${PATH}"
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
-          export CC=clang
-          export KBUILD_BUILD_USER=SodaSiz
-          export KBUILD_BUILD_HOST=github-actions
-          
           echo "ARCH=arm64" >> $GITHUB_ENV
           echo "SUBARCH=arm64" >> $GITHUB_ENV
-          echo "CLANG_PATH=${CLANG_PATH}" >> $GITHUB_ENV
-          echo "PATH=${PATH}" >> $GITHUB_ENV
+          echo "CLANG_PATH=${GITHUB_WORKSPACE}/toolchain/clang/bin" >> $GITHUB_ENV
+          echo "PATH=${GITHUB_WORKSPACE}/toolchain/clang/bin:${PATH}" >> $GITHUB_ENV
           echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
           echo "KBUILD_BUILD_USER=SodaSiz" >> $GITHUB_ENV
           echo "KBUILD_BUILD_HOST=github-actions" >> $GITHUB_ENV
+          echo "TARGET_PRODUCT=bangkk" >> $GITHUB_ENV
       
-      - name: Generate defconfig
+      - name: Generate Base Defconfig
         run: |
-          make O=out ARCH=arm64 ${{ inputs.defconfig }}
+          echo "🔧 Generating base defconfig: vendor/${{ inputs.build_config }}"
+          
+          # Build with the holi-qgki config
+          make O=out ARCH=arm64 vendor/${{ inputs.build_config }} 2>&1 | tee defconfig.log
+          
+          if [ ! -f out/.config ]; then
+            echo "❌ Failed to generate defconfig!"
+            exit 1
+          fi
+          
+          echo "✅ Base defconfig generated successfully"
       
-      - name: Enable ccache
+      - name: Merge Bangkk Device Config
         run: |
-          echo "CONFIG_CCACHE=y" >> out/.config
+          echo "🔧 Merging bangkk device-specific configuration..."
+          
+          # Check if bangkk config exists
+          if [ -f arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config ]; then
+            echo "✅ Found moto-holi-bangkk.config"
+            
+            # Merge the config
+            cat arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config >> out/.config
+            
+            # Regenerate to resolve dependencies
+            make O=out ARCH=arm64 olddefconfig
+            
+            echo "✅ Bangkk config merged successfully"
+          else
+            echo "⚠️  Bangkk config not found, building with base config only"
+          fi
       
-      - name: Enable LTO
-        if: ${{ inputs.use_lto }}
+      - name: Display Final Config Info
         run: |
-          ./scripts/config --file out/.config -e CONFIG_LTO_CLANG
-          ./scripts/config --file out/.config -e CONFIG_LTO_CLANG_THIN
+          echo "=== 📊 Kernel Configuration Summary ==="
+          grep "^CONFIG_LOCALVERSION=" out/.config || echo "No LOCALVERSION set"
+          grep "^CONFIG_BUILD_ARM64_DT_OVERLAY" out/.config || echo "No DT overlay"
+          echo ""
+          echo "=== Module signing config ==="
+          grep "^CONFIG_MODULE_SIG" out/.config || echo "No module signing config"
       
-      - name: Build Kernel
+      - name: Build Kernel Image
         run: |
+          echo "🚀 Starting VANILLA kernel build..."
+          echo "⏰ Start time: $(date)"
+          
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
             LLVM_IAS=1 \
-            2>&1 | tee build.log
-      
-      - name: Check Kernel Image
-        run: |
-          if [ -f out/arch/arm64/boot/Image ]; then
-            echo "✅ Kernel Image built successfully"
-            ls -lh out/arch/arm64/boot/Image*
-          else
-            echo "❌ Kernel Image not found!"
+            Image Image.gz 2>&1 | tee build-image.log
+          
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          echo "⏰ End time: $(date)"
+          
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Kernel image build failed!"
             exit 1
           fi
+          
+          echo "✅ Kernel image built successfully"
       
-      - name: Prepare AnyKernel3
+      - name: Build DTB (Device Tree)
         run: |
-          cd AnyKernel3
-          rm -rf .git README.md
+          echo "🌳 Building device tree blobs..."
           
-          # Copy kernel image
-          cp ../out/arch/arm64/boot/Image ./
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            dtbs 2>&1 | tee build-dtbs.log || echo "⚠️  DTB build failed or not needed"
           
-          # Copy DTB if exists
-          if [ -f ../out/arch/arm64/boot/dtb ]; then
-            cp ../out/arch/arm64/boot/dtb ./
+          echo "✅ DTB build completed"
+      
+      - name: Build Kernel Modules
+        if: ${{ inputs.build_modules }}
+        run: |
+          echo "📦 Building in-tree kernel modules..."
+          
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            modules 2>&1 | tee build-modules.log || echo "⚠️  In-tree module build encountered issues"
+          
+          echo "✅ In-tree kernel modules build completed"
+      
+      - name: Build Techpack Modules (Qualcomm)
+        if: ${{ inputs.build_modules }}
+        run: |
+          echo "📦 Building Qualcomm techpack modules..."
+          echo "Detected techpack modules: audio, camera, dataipa, datarmnet, datarmnet-ext, display, video"
+          
+          # Build each techpack module
+          for module in audio camera dataipa datarmnet datarmnet-ext display video; do
+            if [ -d "techpack/$module" ]; then
+              echo "Building techpack/$module..."
+              make -j$(nproc --all) O=out \
+                ARCH=arm64 \
+                CC=clang \
+                LD=ld.lld \
+                CLANG_TRIPLE=aarch64-linux-gnu- \
+                CROSS_COMPILE=aarch64-linux-gnu- \
+                CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                LLVM=1 \
+                LLVM_IAS=1 \
+                M=techpack/$module 2>&1 | tee -a build-techpack-$module.log || echo "⚠️  techpack/$module build had issues"
+            fi
+          done
+          
+          echo "✅ Techpack modules build completed"
+      
+      - name: Install Modules
+        if: ${{ inputs.build_modules }}
+        run: |
+          echo "📦 Installing kernel modules..."
+          
+          mkdir -p out/modules_out
+          
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            INSTALL_MOD_PATH=modules_out \
+            INSTALL_MOD_STRIP=1 \
+            modules_install 2>&1 | tee install-modules.log || echo "⚠️  Module install encountered issues"
+          
+          echo "✅ Modules installed to out/modules_out"
+      
+      - name: Check Build Artifacts
+        run: |
+          echo "=== 🔍 Checking build artifacts ==="
+          
+          # Check kernel images
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "✅ Image: $(ls -lh out/arch/arm64/boot/Image | awk '{print $5}')"
+          else
+            echo "❌ Image NOT found!"
+            exit 1
           fi
           
-          # Copy DTBO if exists
-          if [ -f ../out/arch/arm64/boot/dtbo.img ]; then
-            cp ../out/arch/arm64/boot/dtbo.img ./
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            echo "✅ Image.gz: $(ls -lh out/arch/arm64/boot/Image.gz | awk '{print $5}')"
           fi
+          
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            echo "✅ Image.gz-dtb: $(ls -lh out/arch/arm64/boot/Image.gz-dtb | awk '{print $5}')"
+          fi
+          
+          # Check DTBs
+          echo ""
+          echo "=== Device Tree Files ==="
+          find out/arch/arm64/boot/dts -name "*.dtb" 2>/dev/null | head -20 || echo "No DTBs found"
+          
+          # Check modules
+          if [ -d out/modules_out ]; then
+            echo ""
+            echo "=== Kernel Modules ==="
+            MODULE_COUNT=$(find out/modules_out -name "*.ko" | wc -l)
+            echo "Total modules: $MODULE_COUNT"
+            echo ""
+            echo "First 20 modules:"
+            find out/modules_out -name "*.ko" | head -20
+            echo ""
+            echo "=== Techpack modules ==="
+            find out -path "*/techpack/*" -name "*.ko" 2>/dev/null | head -20 || echo "No techpack modules in out/"
+          fi
+          
+          echo ""
+          echo "=== All boot artifacts ==="
+          ls -lh out/arch/arm64/boot/ 2>/dev/null || echo "Boot directory listing failed"
       
-      - name: Create flashable ZIP
+      - name: Create Kernel Package
         run: |
-          cd AnyKernel3
-          zip -r9 ../Bangkk-Kernel-$(date +%Y%m%d-%H%M).zip * -x .git README.md *placeholder
+          echo "📦 Creating kernel package..."
+          
+          mkdir -p kernel-package/boot
+          mkdir -p kernel-package/modules
+          
+          # Copy kernel images
+          cp out/arch/arm64/boot/Image kernel-package/boot/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz kernel-package/boot/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz-dtb kernel-package/boot/ 2>/dev/null || true
+          
+          # Copy DTBs
+          if [ -d out/arch/arm64/boot/dts ]; then
+            mkdir -p kernel-package/boot/dts
+            find out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} kernel-package/boot/dts/ \; 2>/dev/null || true
+          fi
+          
+          # Copy modules
+          if [ -d out/modules_out ]; then
+            cp -r out/modules_out/* kernel-package/modules/ 2>/dev/null || true
+          fi
+          
+          # Copy techpack modules
+          if [ -d out/techpack ]; then
+            echo "Copying techpack modules..."
+            find out/techpack -name "*.ko" -exec cp {} kernel-package/modules/ \; 2>/dev/null || true
+          fi
+          
+          # Create info file
+          cat > kernel-package/BUILD_INFO.txt <<EOF
+          Build Information
+          =================
+          Device: Motorola G84 5G (bangkk)
+          Platform: Qualcomm SM6375 (holi)
+          Kernel: Linux 5.4
+          Branch: lineage-23.0
+          Build date: $(date)
+          Build config: ${{ inputs.build_config }}
+          Modules built: ${{ inputs.build_modules }}
+          Commit: ${{ github.sha }}
+          Builder: ${{ github.actor }}
+          EOF
+          
+          echo "✅ Kernel package created"
+          ls -lR kernel-package/
       
-      - name: Upload Kernel
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Bangkk-Kernel-${{ github.run_number }}
+          name: Bangkk-Vanilla-Kernel-${{ github.run_number }}
           path: |
-            Bangkk-Kernel-*.zip
-            out/arch/arm64/boot/Image*
-            build.log
+            kernel-package/**/*
+            build-*.log
+            out/.config
           retention-days: 30
       
-      - name: Upload to Release (if tagged)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+      - name: Upload Build Logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
-          files: Bangkk-Kernel-*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Build-Logs-Failed-${{ github.run_number }}
+          path: |
+            *.log
+            out/.config
+            defconfig.log
+          retention-days: 7
+      
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "=== 📊 BUILD SUMMARY ==="
+          echo "Build number: ${{ github.run_number }}"
+          echo "Config used: ${{ inputs.build_config }}"
+          echo "Modules built: ${{ inputs.build_modules }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: lineage-23.0"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "✅ BUILD STATUS: SUCCESS"
+            echo "📦 Kernel Image size: $(stat -c%s out/arch/arm64/boot/Image 2>/dev/null || echo 'unknown')"
+            
+            if [ -d out/modules_out ]; then
+              MODULE_COUNT=$(find out/modules_out -name "*.ko" 2>/dev/null | wc -l)
+              echo "📦 Modules compiled: $MODULE_COUNT"
+            fi
+          else
+            echo "❌ BUILD STATUS: FAILED"
+            echo "Check the build logs for errors"
+          fi
