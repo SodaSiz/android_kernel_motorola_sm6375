@@ -24,66 +24,74 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y \
-            bc bison build-essential curl flex git gnupg \
-            libssl-dev libelf-dev lld llvm clang \
+            bc bison build-essential flex \
+            libssl-dev libelf-dev \
+            clang lld llvm \
             python3 unzip zip
 
-      # 🔥 IMPORTANT : on ne touche PAS au source tree
-      - name: Prepare output directory
+      # -------------------------------------------------
+      # CLEAN STRICT (GKI compliant)
+      # -------------------------------------------------
+      - name: Clean output directory
         run: |
           rm -rf ${OUT_DIR}
           mkdir -p ${OUT_DIR}
 
-      - name: Generate kernel config (GKI + holi + bangkk)
+      # -------------------------------------------------
+      # GKI BASE CONFIG (OUT ONLY)
+      # -------------------------------------------------
+      - name: Generate base GKI config
         run: |
-          set -e
-
-          # 1️⃣ Base GKI
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
 
-          # 2️⃣ Merge Holi SoC
-          scripts/kconfig/merge_config.sh -m \
-            ${OUT_DIR}/.config \
-            arch/arm64/configs/vendor/holi_GKI.config
+      # -------------------------------------------------
+      # MERGE HOLI + BANGKK (OUT ONLY)
+      # -------------------------------------------------
+      - name: Merge vendor configs
+        run: |
+          cp ${OUT_DIR}/.config ${OUT_DIR}/base.config
 
-          # 3️⃣ Merge device config
           scripts/kconfig/merge_config.sh -m \
-            ${OUT_DIR}/.config \
+            ${OUT_DIR}/base.config \
+            arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # 4️⃣ Désactiver complètement FTS (écran non compatible)
-          sed -i \
-            -e 's/^CONFIG_TOUCHSCREEN_FTS.*/# CONFIG_TOUCHSCREEN_FTS is not set/' \
-            -e 's/^CONFIG_TOUCHSCREEN_FTS_V3.*/# CONFIG_TOUCHSCREEN_FTS_V3 is not set/' \
-            ${OUT_DIR}/.config
+          mv .config ${OUT_DIR}/.config
 
-          # 5️⃣ S'assurer que Goodix est bien activé
-          sed -i \
-            's/^# CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI is not set/CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI=m/' \
-            ${OUT_DIR}/.config
-
-          # 6️⃣ Désactivation KEYS / signatures (clang + GKI safe)
+      # -------------------------------------------------
+      # FORCE GOODIX / DISABLE FTS (FINAL OVERRIDE)
+      # -------------------------------------------------
+      - name: Force Goodix touchscreen
+        run: |
           cat >> ${OUT_DIR}/.config <<'EOF'
-          # CONFIG_KEYS is not set
-          # CONFIG_ASYMMETRIC_KEYS is not set
-          # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
-          # CONFIG_SYSTEM_REVOCATION_KEYRING is not set
-          # CONFIG_INTEGRITY_SIGNATURE is not set
-          # CONFIG_MODULE_SIG is not set
-          # CONFIG_MODULE_SIG_ALL is not set
+          # Disable FTS touchscreen
+          # CONFIG_TOUCHSCREEN_FTS is not set
+          # CONFIG_TOUCHSCREEN_FTS_V3 is not set
+
+          # Enable Goodix
+          CONFIG_TOUCHSCREEN_GOODIX=y
+          CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI=m
           EOF
 
-          # 7️⃣ Normalisation finale (OBLIGATOIRE)
+      # -------------------------------------------------
+      # FINAL NORMALIZATION
+      # -------------------------------------------------
+      - name: Finalize config
+        run: |
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
 
-      - name: Verify final config
+      # -------------------------------------------------
+      # SANITY CHECK (NO SOURCE POLLUTION)
+      # -------------------------------------------------
+      - name: Verify clean source tree
         run: |
-          echo "==== TOUCHSCREEN ===="
-          grep TOUCHSCREEN ${OUT_DIR}/.config || true
-          echo "==== KEYS ===="
-          grep KEYS ${OUT_DIR}/.config || true
+          test ! -f .config
+          git status --porcelain
 
-      - name: Build kernel Image (GKI)
+      # -------------------------------------------------
+      # BUILD
+      # -------------------------------------------------
+      - name: Build kernel Image
         run: |
           make -j$(nproc) \
             O=${OUT_DIR} \
@@ -93,11 +101,9 @@ jobs:
             LLVM_IAS=1 \
             Image
 
-      - name: Verify output
-        run: |
-          ls -lh ${OUT_DIR}/arch/arm64/boot/Image
-          file ${OUT_DIR}/arch/arm64/boot/Image
-
+      # -------------------------------------------------
+      # ARTIFACT
+      # -------------------------------------------------
       - name: Upload kernel Image
         uses: actions/upload-artifact@v4
         with:
