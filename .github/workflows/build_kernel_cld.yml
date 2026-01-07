@@ -52,15 +52,13 @@ jobs:
             git \
             gnupg \
             gperf \
-            lib32ncurses5-dev \
+            libncurses-dev \
+            libncurses6 \
             lib32readline-dev \
             lib32z1-dev \
             libc6-dev-i386 \
             libelf-dev \
             liblz4-tool \
-            libncurses5 \
-            libncurses5-dev \
-            libsdl1.2-dev \
             libssl-dev \
             libxml2 \
             libxml2-utils \
