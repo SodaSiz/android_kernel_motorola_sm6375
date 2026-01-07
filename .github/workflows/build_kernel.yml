@@ -41,19 +41,18 @@ jobs:
         run: |
           grep -E "KEYS|ASYMMETRIC" ${OUT_DIR}/.config || true
 
-
-
-
       - name: Generate kernel config (GKI + holi + bangkk)
         run: |
+          # 1) Base GKI dans OUT_DIR uniquement
           make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
 
+          # 2) Merge holi + bangkk
           scripts/kconfig/merge_config.sh -m \
             ${OUT_DIR}/.config \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
-          # Fragment de désactivation KEYS (CRITIQUE)
+          # 3) Désactivation KEYS (clang fix)
           cat > disable_keys.config <<'EOF'
           # CONFIG_KEYS is not set
           # CONFIG_ASYMMETRIC_KEYS is not set
@@ -69,10 +68,20 @@ jobs:
             ${OUT_DIR}/.config \
             disable_keys.config
 
-          # Désactivation écran FTS (bangkk = Goodix)
-          echo "# CONFIG_TOUCHSCREEN_FTS_V3 is not set" >> ${OUT_DIR}/.config
+          # 4) Forcer écran Goodix (pas FTS)
+          sed -i 's/CONFIG_TOUCHSCREEN_FTS_V3=m/# CONFIG_TOUCHSCREEN_FTS_V3 is not set/' ${OUT_DIR}/.config
 
+          # 5) Normalisation finale
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
+          
+                - name: Verify critical config
+        run: |
+          echo "==== KEYS ===="
+          grep CONFIG_KEYS ${OUT_DIR}/.config || true
+          echo "==== TOUCH ===="
+          grep TOUCHSCREEN ${OUT_DIR}/.config || true
+
+
       - name: Build kernel (Image only)
         run: |
           make -j$(nproc) \
