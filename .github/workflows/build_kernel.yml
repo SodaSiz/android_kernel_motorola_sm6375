@@ -74,7 +74,7 @@ jobs:
           # 5) Normalisation finale
           make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
           
-                - name: Verify critical config
+      - name: Verify critical config
         run: |
           echo "==== KEYS ===="
           grep CONFIG_KEYS ${OUT_DIR}/.config || true
