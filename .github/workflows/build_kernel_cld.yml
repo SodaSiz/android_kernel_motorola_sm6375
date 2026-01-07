@@ -1,0 +1,201 @@
+name: Build Kernel for Bangkk
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Defconfig to use'
+        required: true
+        default: 'vendor/bangkk_defconfig'
+        type: choice
+        options:
+          - 'vendor/bangkk_defconfig'
+          - 'vendor/sm6375-perf_defconfig'
+          - 'gki_defconfig'
+      
+      use_ksu:
+        description: 'Build with KernelSU'
+        required: false
+        default: false
+        type: boolean
+        
+      use_lto:
+        description: 'Enable LTO (Link Time Optimization)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    name: Build Kernel
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          ref: lineage-23.0
+          fetch-depth: 1
+      
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            g++-multilib \
+            gcc-multilib \
+            git \
+            gnupg \
+            gperf \
+            lib32ncurses5-dev \
+            lib32readline-dev \
+            lib32z1-dev \
+            libc6-dev-i386 \
+            libelf-dev \
+            liblz4-tool \
+            libncurses5 \
+            libncurses5-dev \
+            libsdl1.2-dev \
+            libssl-dev \
+            libxml2 \
+            libxml2-utils \
+            lzop \
+            pngcrush \
+            rsync \
+            schedtool \
+            squashfs-tools \
+            xsltproc \
+            zip \
+            zlib1g-dev \
+            python3 \
+            python-is-python3
+      
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: kernel-bangkk-${{ github.sha }}
+          restore-keys: |
+            kernel-bangkk-
+          max-size: 4G
+      
+      - name: Clone Toolchain (Proton Clang)
+        run: |
+          mkdir -p toolchain
+          cd toolchain
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
+      
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+      
+      - name: Setup KernelSU (Optional)
+        if: ${{ inputs.use_ksu }}
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+      
+      - name: Export Build Variables
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CLANG_PATH="${GITHUB_WORKSPACE}/toolchain/clang/bin"
+          export PATH="${CLANG_PATH}:${PATH}"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          export CC=clang
+          export KBUILD_BUILD_USER=SodaSiz
+          export KBUILD_BUILD_HOST=github-actions
+          
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "SUBARCH=arm64" >> $GITHUB_ENV
+          echo "CLANG_PATH=${CLANG_PATH}" >> $GITHUB_ENV
+          echo "PATH=${PATH}" >> $GITHUB_ENV
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=SodaSiz" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=github-actions" >> $GITHUB_ENV
+      
+      - name: Generate defconfig
+        run: |
+          make O=out ARCH=arm64 ${{ inputs.defconfig }}
+      
+      - name: Enable ccache
+        run: |
+          echo "CONFIG_CCACHE=y" >> out/.config
+      
+      - name: Enable LTO
+        if: ${{ inputs.use_lto }}
+        run: |
+          ./scripts/config --file out/.config -e CONFIG_LTO_CLANG
+          ./scripts/config --file out/.config -e CONFIG_LTO_CLANG_THIN
+      
+      - name: Build Kernel
+        run: |
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            2>&1 | tee build.log
+      
+      - name: Check Kernel Image
+        run: |
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "✅ Kernel Image built successfully"
+            ls -lh out/arch/arm64/boot/Image*
+          else
+            echo "❌ Kernel Image not found!"
+            exit 1
+          fi
+      
+      - name: Prepare AnyKernel3
+        run: |
+          cd AnyKernel3
+          rm -rf .git README.md
+          
+          # Copy kernel image
+          cp ../out/arch/arm64/boot/Image ./
+          
+          # Copy DTB if exists
+          if [ -f ../out/arch/arm64/boot/dtb ]; then
+            cp ../out/arch/arm64/boot/dtb ./
+          fi
+          
+          # Copy DTBO if exists
+          if [ -f ../out/arch/arm64/boot/dtbo.img ]; then
+            cp ../out/arch/arm64/boot/dtbo.img ./
+          fi
+      
+      - name: Create flashable ZIP
+        run: |
+          cd AnyKernel3
+          zip -r9 ../Bangkk-Kernel-$(date +%Y%m%d-%H%M).zip * -x .git README.md *placeholder
+      
+      - name: Upload Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bangkk-Kernel-${{ github.run_number }}
+          path: |
+            Bangkk-Kernel-*.zip
+            out/arch/arm64/boot/Image*
+            build.log
+          retention-days: 30
+      
+      - name: Upload to Release (if tagged)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Bangkk-Kernel-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
