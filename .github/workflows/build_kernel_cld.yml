@@ -27,16 +27,42 @@ jobs:
       - name: Build Kernel
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export CC=clang
+          export SUBARCH=arm64
           
-          # 1. Configuration de base
-          make O=out vendor/holi-qgki_defconfig
+          # Chemins vers la toolchain
+          CLANG_DIR=$(pwd)/clang/proton-clang-master
+          export PATH="$CLANG_DIR/bin:$PATH"
           
-          # 2. Fusion avec la config spécifique au G84 (bangkk)
+          # Variables de compilation
+          # On force HOSTCC et HOSTCXX sur le GCC du système pour éviter l'erreur libc
+          make O=out \
+               ARCH=arm64 \
+               CC=clang \
+               HOSTCC=gcc \
+               HOSTCXX=g++ \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+               NM=llvm-nm \
+               OBJCOPY=llvm-objcopy \
+               OBJDUMP=llvm-objdump \
+               STRIP=llvm-strip \
+               vendor/holi-qgki_defconfig
+
+          # Fusion du fragment Moto G84
           ./scripts/kconfig/merge_config.sh -O out out/.config arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
-          
+
+          # Lancement de la compilation
+          make -j$(nproc --all) O=out \
+               ARCH=arm64 \
+               CC=clang \
+               HOSTCC=gcc \
+               HOSTCXX=g++ \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+               NM=llvm-nm \
+               OBJCOPY=llvm-objcopy \
+               OBJDUMP=llvm-objdump \
+               STRIP=llvm-strip         
           # 3. Compilation
           make -j$(nproc --all) O=out
 
