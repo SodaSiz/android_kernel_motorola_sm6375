@@ -1,54 +1,107 @@
-- name: Build Kernel
+name: Build Bangkk Kernel GKI
+on:
+  workflow_dispatch: # Lancement manuel depuis l'onglet Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
+          clang lld llvm aarch64-linux-gnu-gcc image-sig-util
+
+      - name: Download Clang Toolchain
+        run: |
+          mkdir clang
+          # Utilisation de la toolchain AOSP Clang stable (r416183b)
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz
+          tar -xf clang-r416183b.tar.gz -C clang
+
+      - name: Build Kernel
+        run: |
+          # Configuration des variables d'environnement
           export PATH=$(pwd)/clang/bin:$PATH
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
           export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
           
-          # 1. Préparation du répertoire de sortie
+          # 1. Création du répertoire de sortie
           mkdir -p out
           
-          # 2. Fusion des configs (GKI + Holi + Bangkk + Lineage)
+          # 2. Fusion des configurations (Ordre : Base -> SOC -> Device -> Lineage)
+          # On part du GKI de base
           make O=out ARCH=arm64 gki_defconfig
-          scripts/kconfig/merge_config.sh -O out/ out/.config \
+          
+          # On fusionne les fragments spécifiques
+          ./scripts/kconfig/merge_config.sh -O out/ out/.config \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
             arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config
 
-          # 3. Compilation du kernel et des modules
+          # 3. Compilation du kernel et des modules (j$(nproc) utilise tous les CPU disponibles)
           make -j$(nproc --all) O=out ARCH=arm64
-      
+
       - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
+          
+          # Copie de l'image kernel GKI
           cp out/arch/arm64/boot/Image AnyKernel3/
           
-          # Copie des modules .ko (essentiel pour le tactile Goodix)
+          # Gestion des modules (.ko) - Crucial pour le tactile Goodix
           mkdir -p AnyKernel3/modules/vendor/lib/modules
           find out/ -name "*.ko" -exec cp {} AnyKernel3/modules/vendor/lib/modules/ \;
-
-          # Création du script anykernel.sh personnalisé
+          
+          # Création du script anykernel.sh personnalisé pour Bangkk
           cat <<EOF > AnyKernel3/anykernel.sh
-          # AnyKernel3 Ramdisk Mod Script
+          # AnyKernel3 Setup
           properties() { '
-          kernel.string=Kernel LineageOS GKI - Bangkk
+          kernel.string=LineageOS GKI Kernel for Moto G84 (Bangkk)
           do.devicecheck=1
           do.modules=1
           do.systemless=1
           do.cleanup=1
           device.name1=bangkk
+          device.name2=moto g84 5G
           '; }
+          
+          # Importation des fonctions core
           . /tmp/anykernel/tools/ak3-core.sh
+          
+          # Flashage du kernel dans la partition boot
           split_boot;
           flash_boot;
+          
+          # Injection des modules dans vendor_dlkm (requis pour GKI 5.4)
+          # Le script AnyKernel s'occupe de trouver la partition vendor_dlkm automatiquement
+          flash_dtbo;
           EOF
+          
+          # Création du ZIP final
+          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel-GKI.zip *
 
-          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel.zip *
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: Kernel_Bangkk
-          path: Bangkk-Kernel-GKI-Goodix.zip
+          files: Bangkk-Kernel-GKI.zip
+          tag_name: build-${{ github.run_number }}
+          name: Build Kernel Bangkk ${{ github.run_number }}
+          body: |
+            Build automatique du Kernel LineageOS GKI pour Motorola G84 (Bangkk).
+            - Version Kernel: 5.4 GKI
+            - Panel: Goodix Support inclus (modules)
+            - Date: ${{ github.event.head_commit.timestamp }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
