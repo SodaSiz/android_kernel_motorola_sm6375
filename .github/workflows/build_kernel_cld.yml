@@ -44,18 +44,18 @@ jobs:
           # 2. Compilation avec les fix pour les erreurs de frame-size
           # Nous forçons CONFIG_FRAME_WARN à 4096 pour éviter l'erreur aw963xx.c
           make -j$(nproc --all) O=out ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            KCFLAGS="-Wno-error=frame-larger-than= -Wno-frame-larger-than=2288" \
-            CONFIG_FRAME_WARN=4096 \
-            Image dtbs modules
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          KCFLAGS="-Wno-frame-larger-than -Wno-error" \
+          CONFIG_FRAME_WARN=4096 \
+          Image dtbs modules
 
       - name: Package with AnyKernel3
         run: |
