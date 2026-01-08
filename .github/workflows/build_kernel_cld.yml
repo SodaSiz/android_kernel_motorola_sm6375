@@ -57,7 +57,9 @@ jobs:
             STRIP=llvm-strip \
             KCFLAGS="-w" \
             CONFIG_FRAME_WARN=4096 \
-            Image dtbs modules      - name: Package with AnyKernel3
+            Image dtbs modules
+
+      - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
           
