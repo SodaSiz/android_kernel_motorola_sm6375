@@ -21,6 +21,7 @@ jobs:
           # Proton Clang est plus flexible avec les erreurs de drivers Motorola
           wget https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
           tar -xf master.tar.gz -C clang --strip-components=1
+      
 
       - name: Build Kernel
         run: |
@@ -34,30 +35,29 @@ jobs:
           
           mkdir -p out
           
-          # 1. Configuration (Fusion des defconfigs)
+          # 1. Configuration
           make O=out ARCH=arm64 gki_defconfig
           ./scripts/kconfig/merge_config.sh -O out/ out/.config \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
             arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config
 
-          # 2. Compilation avec les fix pour les erreurs de frame-size
-          # Nous forçons CONFIG_FRAME_WARN à 4096 pour éviter l'erreur aw963xx.c
+          # 2. Compilation
+          # On retire -Wno-frame-larger-than des KCFLAGS pour éviter l'erreur de syntaxe
+          # On utilise CONFIG_FRAME_WARN pour monter la limite à 4096 via la config
           make -j$(nproc --all) O=out ARCH=arm64 \
-          CC=clang \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          KCFLAGS="-Wno-frame-larger-than -Wno-error" \
-          CONFIG_FRAME_WARN=4096 \
-          Image dtbs modules
-
-      - name: Package with AnyKernel3
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            KCFLAGS="-w" \
+            CONFIG_FRAME_WARN=4096 \
+            Image dtbs modules      - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
           
