@@ -18,7 +18,7 @@ jobs:
       - name: Download Clang Toolchain
         run: |
           mkdir clang
-          # Utilisation de Proton Clang (très stable pour les kernels Android)
+          # Proton Clang est plus flexible avec les erreurs de drivers Motorola
           wget https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
           tar -xf master.tar.gz -C clang --strip-components=1
 
@@ -32,19 +32,17 @@ jobs:
           export CC=clang
           export LD=ld.lld
           
-          # 1. Préparation
           mkdir -p out
           
-          # 2. Fusion des configs (Vérifie bien que les chemins sont exacts dans ton repo)
+          # 1. Configuration (Fusion des defconfigs)
           make O=out ARCH=arm64 gki_defconfig
-          
           ./scripts/kconfig/merge_config.sh -O out/ out/.config \
             arch/arm64/configs/vendor/holi_GKI.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
             arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config
 
-          # 3. Compilation
-          # On limite à -j$(nproc) pour éviter les plantages RAM sur GitHub
+          # 2. Compilation avec les fix pour les erreurs de frame-size
+          # Nous forçons CONFIG_FRAME_WARN à 4096 pour éviter l'erreur aw963xx.c
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -54,22 +52,30 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            STRIP=llvm-strip \
+            KCFLAGS="-Wno-error=frame-larger-than= -Wno-frame-larger-than=2288" \
+            CONFIG_FRAME_WARN=4096 \
+            Image dtbs modules
 
       - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
+          
+          # Copie de l'image kernel
           cp out/arch/arm64/boot/Image AnyKernel3/
           
-          # Copie des modules (indispensable pour le tactile Goodix)
+          # Copie des DTB et DTBO (Indispensable pour Bangkk)
+          find out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtb" -exec cp {} AnyKernel3/ \;
+          find out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtbo" -exec cp {} AnyKernel3/ \;
+          
+          # Copie des modules (Tactile Goodix, Audio, etc.)
           mkdir -p AnyKernel3/modules/vendor/lib/modules
           find out/ -name "*.ko" -exec cp {} AnyKernel3/modules/vendor/lib/modules/ \;
           
-          # Création du script d'installation
+          # Création du script AnyKernel3
           cat <<EOF > AnyKernel3/anykernel.sh
-          # AnyKernel3 Setup
           properties() { '
-          kernel.string=LineageOS GKI Kernel for Moto G84 (Bangkk)
+          kernel.string=LineageOS GKI - Bangkk (G84 5G)
           do.devicecheck=1
           do.modules=1
           do.systemless=1
@@ -80,22 +86,23 @@ jobs:
           . /tmp/anykernel/tools/ak3-core.sh
           split_boot;
           flash_boot;
+          flash_dtbo;
           EOF
           
-          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel-GKI.zip *
+          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel-GKI-v1.zip *
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Bangkk-Kernel-GKI
-          path: Bangkk-Kernel-GKI.zip
+          name: Kernel-Bangkk-ZIP
+          path: Bangkk-Kernel-GKI-v1.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: success()
         with:
-          files: Bangkk-Kernel-GKI.zip
+          files: Bangkk-Kernel-GKI-v1.zip
           tag_name: build-${{ github.run_number }}
-          name: Kernel Bangkk GKI Build ${{ github.run_number }}
+          name: Bangkk Kernel GKI Build ${{ github.run_number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
