@@ -1,85 +1,54 @@
-name: Build Kernel Moto G84 (bangkk)
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04 # Version stable pour la compilation kernel
-    steps:
-      - name: Checkout Source
-        uses: actions/checkout@v4
-
-      - name: Setup Build Env
+- name: Build Kernel
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison gperf libssl-dev libcrypto++-dev libncurses5-dev libncurses-dev python3-minimal zip python2
-
-      - name: Setup Toolchain (AOSP Clang)
-        run: |
-          mkdir -p clang
-          cd clang
-          # Utilisation d'un miroir GitHub fiable pour Clang r487747c
-          # C'est beaucoup plus rapide et évite les erreurs 400
-          git clone https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r487747c.git --depth=1 .
-          echo "$(pwd)/bin" >> $GITHUB_PATH
-      - name: Setup GCC (Aarch64 & Arm32)
-        run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
-
-      - name: Build Kernel
-        run: |
-          # Variables d'environnement
+          export PATH=$(pwd)/clang/bin:$PATH
           export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH="$(pwd)/clang/bin:$PATH"
-          export KBUILD_BUILD_USER="Gemini"
-          export KBUILD_BUILD_HOST="GitHub-Actions"
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CC=clang
+          export LD=ld.lld
           
-          # Paramètres de compilation pour éviter les erreurs de linker
-          MAKE_PARAMS=(
-              O=out
-              ARCH=arm64
-              CC=clang
-              HOSTCC=gcc
-              HOSTCXX=g++
-              CROSS_COMPILE=aarch64-linux-gnu-
-              CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-              LD=ld.lld
-              AR=llvm-ar
-              NM=llvm-nm
-              OBJCOPY=llvm-objcopy
-              OBJDUMP=llvm-objdump
-              STRIP=llvm-strip
-          )
+          # 1. Préparation du répertoire de sortie
+          mkdir -p out
+          
+          # 2. Fusion des configs (GKI + Holi + Bangkk + Lineage)
+          make O=out ARCH=arm64 gki_defconfig
+          scripts/kconfig/merge_config.sh -O out/ out/.config \
+            arch/arm64/configs/vendor/holi_GKI.config \
+            arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
+            arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config
 
-          # 1. Configuration de base
-          make "${MAKE_PARAMS[@]}" vendor/holi-qgki_defconfig
-          
-          # 2. Fusion avec le fragment Moto G84
-          ./scripts/kconfig/merge_config.sh -O out out/.config arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
-          
-          # 3. Compilation réelle
-          make -j$(nproc --all) "${MAKE_PARAMS[@]}"
-
+          # 3. Compilation du kernel et des modules
+          make -j$(nproc --all) O=out ARCH=arm64
+      
       - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
-          # Vérification de l'image (Image.gz ou Image)
-          if [ -f out/arch/arm64/boot/Image.gz ]; then
-            cp out/arch/arm64/boot/Image.gz AnyKernel3/
-          else
-            cp out/arch/arm64/boot/Image AnyKernel3/
-          fi
+          cp out/arch/arm64/boot/Image AnyKernel3/
           
-          # Configuration du script de flash
-          sed -i 's/device.name1=/device.name1=bangkk/g' AnyKernel3/anykernel.sh
-          sed -i 's|block=|block=/dev/block/bootdevice/by-name/boot|g' AnyKernel3/anykernel.sh
-          
-          cd AnyKernel3 && zip -r9 ../Kernel-Moto-G84-Flashable.zip *
+          # Copie des modules .ko (essentiel pour le tactile Goodix)
+          mkdir -p AnyKernel3/modules/vendor/lib/modules
+          find out/ -name "*.ko" -exec cp {} AnyKernel3/modules/vendor/lib/modules/ \;
 
-      - name: Upload Result
+          # Création du script anykernel.sh personnalisé
+          cat <<EOF > AnyKernel3/anykernel.sh
+          # AnyKernel3 Ramdisk Mod Script
+          properties() { '
+          kernel.string=Kernel LineageOS GKI - Bangkk
+          do.devicecheck=1
+          do.modules=1
+          do.systemless=1
+          do.cleanup=1
+          device.name1=bangkk
+          '; }
+          . /tmp/anykernel/tools/ak3-core.sh
+          split_boot;
+          flash_boot;
+          EOF
+
+          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel.zip *
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Moto-G84
-          path: Kernel-Moto-G84-Flashable.zip
+          name: Kernel_Bangkk
+          path: Bangkk-Kernel-GKI-Goodix.zip
