@@ -13,7 +13,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
-          clang lld llvm aarch64-linux-gnu-gcc image-sig-util
+          clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libncurses-dev
 
       - name: Download Clang Toolchain
         run: |
