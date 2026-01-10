@@ -13,7 +13,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lzip libssl-dev libelf-dev clang llvm lld
+          sudo apt-get install -y bc build-essential flex bison lzip libssl-dev libelf-dev clang llvm lld zip
 
       - name: Download Clang (AOSP)
         run: |
@@ -29,10 +29,10 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
-          # Utilisation de la config GKI standard
+          # Utilisation de la config GKI
           make O=out gki_defconfig
           
-          # Compilation : Kernel + Modules + DTBO
+          # Compilation
           make -j$(nproc) O=out \
                       CC=clang \
                       LD=ld.lld \
@@ -49,11 +49,11 @@ jobs:
           cp out/arch/arm64/boot/Image.gz AnyKernel3/
           cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           
-          # Collecte des modules .ko (crucial pour Android 16)
+          # Collecte des modules
           mkdir -p AnyKernel3/modules
           find out -name "*.ko" -exec cp {} AnyKernel3/modules/ \;
           
-          # Création du script anykernel.sh (version optimisée)
+          # Génération du script anykernel.sh
           cat <<EOF > AnyKernel3/anykernel.sh
           # AnyKernel3 Setup
           properties() {
@@ -72,7 +72,6 @@ jobs:
           
           ui_print "- Flashing Kernel..."
           split_boot;
-          # Patch pour forcer le boot sur Android 16
           patch_cmdline "module.sig_enforce" "0"
           patch_cmdline "androidboot.selinux" "permissive"
           flash_boot;
@@ -89,26 +88,13 @@ jobs:
           umount /vendor;
           EOF
 
+      - name: Create Flashable ZIP
+        run: |
+          cd AnyKernel3
+          zip -r9 ../Bangkk-Kernel-GKI-v1.zip * -x .git* README.md
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Bangkk-Kernel-ZIP
-          path: AnyKernel3/*          EOF
-          
-          cd AnyKernel3 && zip -r9 ../Bangkk-Kernel-GKI-v1.zip *
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel-Bangkk-ZIP
           path: Bangkk-Kernel-GKI-v1.zip
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        if: success()
-        with:
-          files: Bangkk-Kernel-GKI-v1.zip
-          tag_name: build-${{ github.run_number }}
-          name: Bangkk Kernel GKI Build ${{ github.run_number }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
