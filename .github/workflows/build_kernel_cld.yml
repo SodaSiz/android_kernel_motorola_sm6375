@@ -1,95 +1,99 @@
-name: Build Bangkk Kernel GKI
+name: Build Bangkk Kernel (GKI Android 16)
+
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
-          clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libncurses-dev zip
+          sudo apt-get install -y bc build-essential flex bison lzip libssl-dev libelf-dev clang llvm lld
 
-      - name: Download Clang Toolchain
+      - name: Download Clang (AOSP)
         run: |
           mkdir clang
-          # Proton Clang est plus flexible avec les erreurs de drivers Motorola
-          wget https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
-          tar -xf master.tar.gz -C clang --strip-components=1
-      
+          cd clang
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522859.tar.gz
+          tar -xf clang-r522859.tar.gz
 
       - name: Build Kernel
         run: |
           export PATH=$(pwd)/clang/bin:$PATH
           export ARCH=arm64
-          export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export CC=clang
-          export LD=ld.lld
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
-          mkdir -p out
+          # Utilisation de la config GKI standard
+          make O=out gki_defconfig
           
-          # 1. Configuration
-          make O=out ARCH=arm64 gki_defconfig
-          ./scripts/kconfig/merge_config.sh -O out/ out/.config \
-            arch/arm64/configs/vendor/holi_GKI.config \
-            arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
-            arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config
+          # Compilation : Kernel + Modules + DTBO
+          make -j$(nproc) O=out \
+                      CC=clang \
+                      LD=ld.lld \
+                      AR=llvm-ar \
+                      NM=llvm-nm \
+                      OBJCOPY=llvm-objcopy \
+                      OBJDUMP=llvm-objdump \
+                      STRIP=llvm-strip \
+                      Image.gz modules dtbo.img
 
-          # 2. Compilation
-          # On retire -Wno-frame-larger-than des KCFLAGS pour éviter l'erreur de syntaxe
-          # On utilise CONFIG_FRAME_WARN pour monter la limite à 4096 via la config
-          make -j$(nproc --all) O=out ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            KCFLAGS="-w" \
-            CONFIG_FRAME_WARN=4096 \
-            Image dtbs modules
-
-      - name: Package with AnyKernel3
+      - name: Prepare AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
+          cp out/arch/arm64/boot/Image.gz AnyKernel3/
+          cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           
-          # Copie de l'image kernel
-          cp out/arch/arm64/boot/Image AnyKernel3/
+          # Collecte des modules .ko (crucial pour Android 16)
+          mkdir -p AnyKernel3/modules
+          find out -name "*.ko" -exec cp {} AnyKernel3/modules/ \;
           
-          # Copie des DTB et DTBO (Indispensable pour Bangkk)
-          find out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtb" -exec cp {} AnyKernel3/ \;
-          find out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtbo" -exec cp {} AnyKernel3/ \;
-          
-          # Copie des modules (Tactile Goodix, Audio, etc.)
-          mkdir -p AnyKernel3/modules/vendor/lib/modules
-          find out/ -name "*.ko" -exec cp {} AnyKernel3/modules/vendor/lib/modules/ \;
-          
-          # Création du script AnyKernel3
+          # Création du script anykernel.sh (version optimisée)
           cat <<EOF > AnyKernel3/anykernel.sh
-          properties() { '
-          kernel.string=LineageOS GKI - Bangkk (G84 5G)
-          do.devicecheck=1
-          do.modules=1
-          do.systemless=1
-          do.cleanup=1
-          device.name1=bangkk
-          device.name2=moto g84 5G
-          '; }
-          . /tmp/anykernel/tools/ak3-core.sh
+          # AnyKernel3 Setup
+          properties() {
+            kernel.string=Bangkk-GKI-A16
+            do.devicecheck=1
+            do.modules=1
+            do.systemless=1
+            do.cleanup=1
+            device.name1=bangkk
+            device.name2=g84
+            supported.versions=13, 14, 15, 16
+          }
+          block=/dev/block/by-name/boot;
+          is_slot_device=1;
+          . /tmp/anykernel/tools/ak3-core.sh;
+          
+          ui_print "- Flashing Kernel..."
           split_boot;
+          # Patch pour forcer le boot sur Android 16
+          patch_cmdline "module.sig_enforce" "0"
+          patch_cmdline "androidboot.selinux" "permissive"
           flash_boot;
+          
+          ui_print "- Flashing DTBO..."
+          reset_ak;
+          block=/dev/block/by-name/dtbo;
+          split_dtbo;
           flash_dtbo;
+          
+          ui_print "- Installing Modules..."
+          mount /vendor;
+          cp -af /tmp/anykernel/modules/*.ko /vendor/lib/modules/;
+          umount /vendor;
           EOF
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bangkk-Kernel-ZIP
+          path: AnyKernel3/*          EOF
           
           cd AnyKernel3 && zip -r9 ../Bangkk-Kernel-GKI-v1.zip *
 
