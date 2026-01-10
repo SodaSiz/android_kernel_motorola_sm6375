@@ -18,9 +18,12 @@ jobs:
       - name: Download Clang (AOSP)
         run: |
           mkdir clang
+          # Utilisation d'un miroir ou du binaire pré-compilé officiel stable
+          # On utilise ici le script officiel pour récupérer les binaires si possible
           cd clang
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522859.tar.gz
-          tar -xf clang-r522859.tar.gz
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522859.tar.gz
+          # Pas besoin de spécifier -z si tar détecte le format, mais on s'assure du téléchargement
+          tar -xvf clang-r522859.tar.gz
 
       - name: Build Kernel
         run: |
@@ -29,10 +32,11 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
-          # Utilisation de la config GKI
+          # Nettoyage et configuration
+          make O=out clean
           make O=out gki_defconfig
           
-          # Compilation
+          # Compilation avec les bons outils LLVM intégrés à Clang
           make -j$(nproc) O=out \
                       CC=clang \
                       LD=ld.lld \
@@ -41,13 +45,19 @@ jobs:
                       OBJCOPY=llvm-objcopy \
                       OBJDUMP=llvm-objdump \
                       STRIP=llvm-strip \
+                      LLVM=1 \
+                      LLVM_IAS=1 \
                       Image.gz modules dtbo.img
 
       - name: Prepare AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git
           cp out/arch/arm64/boot/Image.gz AnyKernel3/
-          cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          
+          # Vérification et copie du DTBO
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          fi
           
           # Collecte des modules
           mkdir -p AnyKernel3/modules
@@ -55,7 +65,6 @@ jobs:
           
           # Génération du script anykernel.sh
           cat <<EOF > AnyKernel3/anykernel.sh
-          # AnyKernel3 Setup
           properties() {
             kernel.string=Bangkk-GKI-A16
             do.devicecheck=1
@@ -76,11 +85,13 @@ jobs:
           patch_cmdline "androidboot.selinux" "permissive"
           flash_boot;
           
-          ui_print "- Flashing DTBO..."
-          reset_ak;
-          block=/dev/block/by-name/dtbo;
-          split_dtbo;
-          flash_dtbo;
+          if [ -f /tmp/anykernel/dtbo.img ]; then
+            ui_print "- Flashing DTBO..."
+            reset_ak;
+            block=/dev/block/by-name/dtbo;
+            split_dtbo;
+            flash_dtbo;
+          fi
           
           ui_print "- Installing Modules..."
           mount /vendor;
