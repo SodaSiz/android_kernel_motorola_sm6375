@@ -1,4 +1,4 @@
-name: Build Bangkk Kernel (GKI Android 16)
+name: Build Bangkk Kernel (Proton Clang)
 
 on:
   workflow_dispatch:
@@ -13,17 +13,11 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lzip libssl-dev libelf-dev clang llvm lld zip
+          sudo apt-get install -y bc build-essential flex bison lzip libssl-dev libelf-dev zip
 
-      - name: Download Clang (AOSP)
+      - name: Download Proton Clang
         run: |
-          mkdir clang
-          # Utilisation d'un miroir ou du binaire pré-compilé officiel stable
-          # On utilise ici le script officiel pour récupérer les binaires si possible
-          cd clang
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522859.tar.gz
-          # Pas besoin de spécifier -z si tar détecte le format, mais on s'assure du téléchargement
-          tar -xvf clang-r522859.tar.gz
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
       - name: Build Kernel
         run: |
@@ -32,48 +26,44 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
-          # Nettoyage et configuration
-          make O=out clean
+          # Dossier de sortie
+          mkdir -p out
+          
+          # Configuration
           make O=out gki_defconfig
           
-          # Compilation avec les bons outils LLVM intégrés à Clang
+          # Compilation GKI
+          # On utilise LLVM=1 pour dire au kernel d'utiliser Clang pour tout (compiler, linker, etc.)
           make -j$(nproc) O=out \
-                      CC=clang \
-                      LD=ld.lld \
-                      AR=llvm-ar \
-                      NM=llvm-nm \
-                      OBJCOPY=llvm-objcopy \
-                      OBJDUMP=llvm-objdump \
-                      STRIP=llvm-strip \
                       LLVM=1 \
                       LLVM_IAS=1 \
+                      CC=clang \
+                      CROSS_COMPILE=aarch64-linux-gnu- \
+                      CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
                       Image.gz modules dtbo.img
 
       - name: Prepare AnyKernel3
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cp out/arch/arm64/boot/Image.gz AnyKernel3/
           
-          # Vérification et copie du DTBO
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
-          fi
+          # Copie du DTBO si généré
+          [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           
-          # Collecte des modules
+          # Collecte agressive des modules (essentiel pour éviter le crash au splash screen)
           mkdir -p AnyKernel3/modules
           find out -name "*.ko" -exec cp {} AnyKernel3/modules/ \;
           
-          # Génération du script anykernel.sh
+          # Script anykernel.sh
           cat <<EOF > AnyKernel3/anykernel.sh
           properties() {
-            kernel.string=Bangkk-GKI-A16
+            kernel.string=Bangkk-Proton-A16
             do.devicecheck=1
             do.modules=1
             do.systemless=1
             do.cleanup=1
             device.name1=bangkk
             device.name2=g84
-            supported.versions=13, 14, 15, 16
           }
           block=/dev/block/by-name/boot;
           is_slot_device=1;
@@ -81,6 +71,7 @@ jobs:
           
           ui_print "- Flashing Kernel..."
           split_boot;
+          # Désactivation des sécurités qui font crash Android 16 non-officiel
           patch_cmdline "module.sig_enforce" "0"
           patch_cmdline "androidboot.selinux" "permissive"
           flash_boot;
