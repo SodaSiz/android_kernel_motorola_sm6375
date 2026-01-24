@@ -1,8 +1,8 @@
 #!/bin/bash
 [ ! -e " KernelSU-Next/kernel/setup.sh" ] && git submodule init && git submodule update
-[ ! -d "toolchain" ] && echo  "installing toolchain..." && mkdir -p toolchain && cd toolchain && echo 'Download antman and sync' && bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=11032023 && echo 'Patch for glibc'
-&& bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") --patch=glibc
-&& echo 'Done'
+
+
+# [ ! -d "toolchain" ] && echo  "installing toolchain..." && mkdir -p toolchain && cd toolchain && echo 'Download antman and sync' && bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=11032023 && echo 'Patch for glibc' && bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") --patch=glibc && echo 'Done'
 
 
 SECONDS=0
