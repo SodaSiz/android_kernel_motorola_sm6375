@@ -21,7 +21,7 @@ jobs:
 
       - uses: szenius/set-timezone@v2.0
         with:
-          timezoneLinux: "Asia/Kolkata"
+          timezoneLinux: "Europe/Paris"
 
       - name: Setup Toolchains
         run: |
@@ -40,10 +40,10 @@ jobs:
 
       - name: Run build
         run: |
-          DEVICE=${{matrix.device}} KSU=1 ./build.sh
+          DEVICE=${{matrix.device}} ./build.sh
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: O_kernel-${{matrix.device}}
+          name: LineageOS_Custom-${{matrix.device}}
           path: AnyKernel3/O*.zip

@@ -21,17 +21,10 @@ if [ -z "$DEVICE" ]; then
 export DEVICE=g84_gdx
 fi
 
-if [[ -z "$KSU" || "$KSU" = "0" ]]; then
-KSU=0
-export KSUSTAT=
-elif [ "$KSU" = "1" ]; then
-CONFIG_KSU=ksu.config
-export KSUSTAT=_KSU
-else
-echo "Error: Set KSU to 0 or 1 to build"
-exit 1
-fi
-export KSU
+
+# if [[ -z "$KSU" || "$KSU" = "0" ]]; then // KSU=0 // export KSUSTAT= // elif [ "$KSU" = "1" ]; then // CONFIG_KSU=ksu.config // export KSUSTAT=_KSU // else // echo "Error: Set KSU to 0 or 1 to build" // exit 1 // fi // export KSU
+
+
 
 if [[ -z "$1" || "$1" = "-c" ]]; then
 echo "Clean Build"
