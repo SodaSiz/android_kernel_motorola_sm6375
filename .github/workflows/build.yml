@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        device: [g84_fts, g84_gdx]
+        device: [g84_gdx] #g84_ftx
     name: "🚧 Build for ${{matrix.device}}"
 
     steps:
