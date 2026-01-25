@@ -27,8 +27,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt udpate
-          sudo apt install bison flex libssl-dev libarchive-tools git -y
+          sudo apt update
+          sudo apt install bison flex libssl-dev libarchive-tools ccache bc python3 -y
 
       - name: Cache Toolchains
         id: cache-toolchain
