@@ -42,26 +42,27 @@ jobs:
       - name: Download AOSP Toolchain (Single Version)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          mkdir -p toolchain
+          mkdir -p toolchain/clang-res
           
-          # 1. Clone partiel ultra-rapide
-          git clone --depth 1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 toolchain/clang-res
+          # 1. Clone partiel avec checkout immédiat du dossier
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 toolchain/clang-tmp
           
-          cd toolchain/clang-res
+          # 2. Vérification et déplacement manuel (plus robuste que sparse-checkout ici)
+          if [ -d "toolchain/clang-tmp/clang-r416155b" ]; then
+              mv toolchain/clang-tmp/clang-r416155b/* toolchain/clang-res/
+              echo "✅ Clang r416155b extrait avec succès"
+          else
+              echo "❌ Erreur: Dossier clang-r416155b introuvable dans le dépôt."
+              ls -R toolchain/clang-tmp/ # Pour voir ce qui a été téléchargé
+              exit 1
+          fi
           
-          # 2. On ne demande que le dossier spécifique
-          git sparse-checkout set clang-r416155b
+          # 3. Nettoyage
+          rm -rf toolchain/clang-tmp
           
-          # 3. On remonte le contenu pour que 'bin' soit dans 'toolchain/clang-res/bin'
-          mv clang-r416155b/* .
-          rm -rf clang-r416155b
-          
-          cd ../..
-          
-          # 4. Télécharger les GCC (ceux-là ne changent pas)
+          # 4. Télécharger les GCC (toujours nécessaires pour les headers)
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
-
       # Mise en cache de la compilation (ccache) pour gagner 20-30 min sur les prochains builds
       - name: Cache ccache
         uses: actions/cache@v4
