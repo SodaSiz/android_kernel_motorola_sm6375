@@ -76,14 +76,14 @@ jobs:
       # =========================
       - name: Toolchain Diagnostic
         run: |
-          echo "======= TOOLCHAIN INFO ======="
-          clang --version
-          ld.lld --version
-          echo "LLVM tools OK"
-          echo "=============================="
+          echo "=== Proton Clang ==="
+          toolchain/proton-clang/bin/clang --version
+          echo "LLVM toolchain OK"
+          echo "=== LLD ==="
+          toolchain/proton-clang/bin/ld.lld --version
 
 
-      # =========================
+
       # Run build
       # =========================
       - name: Run build
