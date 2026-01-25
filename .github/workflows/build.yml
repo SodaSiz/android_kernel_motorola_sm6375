@@ -50,8 +50,9 @@ jobs:
           
           # 2. Déplacer le dossier interne (ex: clang-r416155b) pour qu'il devienne 'toolchain/clang-res'
           # On utilise 'mv' pour renommer le dossier trouvé
-          mv toolchain/clang-tmp/clang-r* toolchain/clang-res
-          
+          SRC_CLANG=$(ls -d toolchain/clang-tmp/clang-r*)
+          mv "$SRC_CLANG" toolchain/clang-res
+
           # Nettoyage
           rm -rf toolchain/clang-tmp
           
