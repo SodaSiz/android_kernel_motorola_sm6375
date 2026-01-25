@@ -84,8 +84,6 @@ STRIP=llvm-strip
 LLVM=1
 LLVM_IAS=1
 CLANG_TRIPLE=aarch64-linux-gnu-
-CROSS_COMPILE=aarch64-linux-android-
-CROSS_COMPILE_COMPAT=arm-linux-androideabi-
 KCFLAGS=-Wno-error
 "
 
