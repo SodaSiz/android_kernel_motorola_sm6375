@@ -42,30 +42,25 @@ jobs:
       - name: Download AOSP Toolchain (Single Version)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          mkdir -p toolchain/clang-res
+          mkdir -p toolchain
+          
+          # 1. Clone partiel ultra-rapide
+          git clone --depth 1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 toolchain/clang-res
+          
           cd toolchain/clang-res
           
-          # Initialiser un dépôt vide
-          git init
-          git remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          # 2. On ne demande que le dossier spécifique
+          git sparse-checkout set clang-r416155b
           
-          # Configurer le Sparse Checkout pour ne prendre qu'UN dossier
-          git config core.sparseCheckout true
-          echo "clang-r416155b/*" > .git/info/sparse-checkout
-          
-          # Télécharger uniquement le dossier voulu (depth 1 pour ne pas avoir l'historique)
-          git pull --depth 1 origin master
-          
-          # Déplacer le contenu pour qu'il soit directement dans clang-res
+          # 3. On remonte le contenu pour que 'bin' soit dans 'toolchain/clang-res/bin'
           mv clang-r416155b/* .
-          rm -rf clang-r416155b .git
+          rm -rf clang-r416155b
           
           cd ../..
           
-          # Télécharger les GCC (ceux-là sont déjà petits et spécifiques)
+          # 4. Télécharger les GCC (ceux-là ne changent pas)
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
-
 
       # Mise en cache de la compilation (ccache) pour gagner 20-30 min sur les prochains builds
       - name: Cache ccache
