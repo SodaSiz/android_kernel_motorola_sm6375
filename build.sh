@@ -2,39 +2,50 @@
 set -e
 
 # ==================================================
-# Kernel build script — Proton Clang / Android 5.4
+# Android Kernel build script — Clang ONLY
+# Target : Android 5.4 (GKI / Motorola / SM6375)
+# Toolchain : Proton Clang
 # ==================================================
 
 SECONDS=0
-export KBUILD_BUILD_USER=SodaSiz
+export KBUILD_BUILD_USER="SodaSiz"
 export ROOT_DIR="$(pwd)"
 
 # --------------------------------------------------
 # Toolchain detection (Proton Clang)
 # --------------------------------------------------
 CLANG_DIR="$ROOT_DIR/toolchain/proton-clang"
-GCC64_DIR="$ROOT_DIR/toolchain/gcc64"
-GCC32_DIR="$ROOT_DIR/toolchain/gcc32"
 
 if [ ! -x "$CLANG_DIR/bin/clang" ]; then
     echo "ERROR: Proton Clang introuvable dans $CLANG_DIR"
     exit 1
 fi
 
-if [ ! -d "$GCC64_DIR" ]; then
-    echo "ERROR: GCC64 introuvable dans $GCC64_DIR"
-    exit 1
-fi
-
 # --------------------------------------------------
 # PATH & LLVM configuration
 # --------------------------------------------------
-export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
+export PATH="$CLANG_DIR/bin:$PATH"
+
+export CC=clang
+export CXX=clang++
+export LD="$CLANG_DIR/bin/ld.lld"
+export AR=llvm-ar
+export NM=llvm-nm
+export OBJCOPY=llvm-objcopy
+export OBJDUMP=llvm-objdump
+export STRIP=llvm-strip
+export READELF=llvm-readelf
+export OBJSIZE=llvm-size
 
 export LLVM=1
 export LLVM_IAS=1
 export ARCH=arm64
 export SUBARCH=arm64
+
+if [ ! -x "$LD" ]; then
+    echo "ERROR: ld.lld introuvable"
+    exit 1
+fi
 
 # --------------------------------------------------
 # Project paths
@@ -59,21 +70,20 @@ else
 fi
 
 # --------------------------------------------------
-# Diagnostic (important en CI)
+# Diagnostic (CI-safe)
 # --------------------------------------------------
 echo "======= TOOLCHAIN INFO ======="
 clang --version
-ld.lld --version
-aarch64-linux-android-gcc --version || true
-arm-linux-androideabi-gcc --version || true
+"$LD" --version
+echo "LLVM-only build (no GCC)"
 echo "=============================="
 
 # --------------------------------------------------
-# Make arguments
+# Make arguments (Clang-only)
 # --------------------------------------------------
 ARGS="
 CC=clang
-LD=ld.lld
+LD=$LD
 AR=llvm-ar
 NM=llvm-nm
 OBJCOPY=llvm-objcopy
@@ -163,3 +173,4 @@ cd "$ROOT_DIR"
 
 echo
 echo "✅ Build terminé avec succès en $((SECONDS / 60))m $((SECONDS % 60))s"
+
