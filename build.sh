@@ -6,13 +6,22 @@
 SECONDS=0
 export KBUILD_BUILD_USER=SodaSiz
 
-# Chemins vers les Toolchains (On utilise les variables définies par le script ou le PATH)
-CLANG_DIR=$(pwd)/toolchain/clang/clang-r416155b
-GCC64_DIR=$(pwd)/toolchain/gcc64
-GCC32_DIR=$(pwd)/toolchain/gcc32
+# Déterminer le chemin absolu du script
+ROOT_DIR=$(pwd)
+CLANG_DIR=$ROOT_DIR/toolchain/clang/clang-r416155b
+GCC64_DIR=$ROOT_DIR/toolchain/gcc64
+GCC32_DIR=$ROOT_DIR/toolchain/gcc32
 
-# Mise à jour du PATH pour être sûr
+# On force l'ajout au PATH en tout début de variable
 export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
+
+# Vérification immédiate pour le log GitHub Actions
+if ! command -v ld.lld &> /dev/null; then
+    echo "ERROR: ld.lld not found in PATH!"
+    echo "Current PATH: $PATH"
+    ls -l $CLANG_DIR/bin/ld.lld
+    exit 1
+fi
 
 export LLVM=1
 export LLVM_IAS=1
