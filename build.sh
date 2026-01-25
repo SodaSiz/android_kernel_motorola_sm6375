@@ -82,7 +82,7 @@ make O=out ${MAKE_ARGS} gki_defconfig
 scripts/kconfig/merge_config.sh -m \
     out/.config \
     arch/arm64/configs/vendor/holi_GKI.config \
-    arch/arm64/configs/vendor/ext_config/lineageos_moto-holi.config \
+    arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
     arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
 # ==============================
