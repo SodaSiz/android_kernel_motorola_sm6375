@@ -79,11 +79,11 @@ make O=out ${MAKE_ARGS} gki_defconfig
 # ==============================
 # Merge vendor fragments (CRITIQUE)
 # ==============================
-$ROOT_DIR/scripts/kconfig/merge_config.sh -m \
-    $ROOT_DIR/out/.config \
-    $ROOT_DIR/arch/arm64/configs/vendor/holi_GKI.config \
-    $ROOT_DIR/arch/arm64/configs/vendor/ext_config/lineageos_moto-holi.config \
-    $ROOT_DIR/arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
+scripts/kconfig/merge_config.sh -m \
+    out/.config \
+    arch/arm64/configs/vendor/holi_GKI.config \
+    arch/arm64/configs/vendor/ext_config/lineageos_moto-holi.config \
+    arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
 
 # ==============================
 # Finalize config
