@@ -39,24 +39,30 @@ jobs:
             toolchain/gcc32
           key: ${{ runner.os }}-aosp-toolchain-r416155b
 
-      - name: Download AOSP Toolchains
+      - name: Download AOSP Toolchain (Single Version)
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # Créer le dossier parent d'abord
-          mkdir -p toolchain
+          mkdir -p toolchain/clang-res
+          cd toolchain/clang-res
           
-          # 1. Télécharger Clang dans un dossier temporaire
-          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth 1 -b master toolchain/clang-tmp
+          # Initialiser un dépôt vide
+          git init
+          git remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
           
-          # 2. Déplacer le dossier interne (ex: clang-r416155b) pour qu'il devienne 'toolchain/clang-res'
-          # On utilise 'mv' pour renommer le dossier trouvé
-          SRC_CLANG=$(ls -d toolchain/clang-tmp/clang-r*)
-          mv "$SRC_CLANG" toolchain/clang-res
-
-          # Nettoyage
-          rm -rf toolchain/clang-tmp
+          # Configurer le Sparse Checkout pour ne prendre qu'UN dossier
+          git config core.sparseCheckout true
+          echo "clang-r416155b/*" > .git/info/sparse-checkout
           
-          # 3. Télécharger les GCC
+          # Télécharger uniquement le dossier voulu (depth 1 pour ne pas avoir l'historique)
+          git pull --depth 1 origin master
+          
+          # Déplacer le contenu pour qu'il soit directement dans clang-res
+          mv clang-r416155b/* .
+          rm -rf clang-r416155b .git
+          
+          cd ../..
+          
+          # Télécharger les GCC (ceux-là sont déjà petits et spécifiques)
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
 
