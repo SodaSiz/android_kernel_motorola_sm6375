@@ -82,10 +82,6 @@ jobs:
           echo "=== LLD ==="
           toolchain/proton-clang/bin/ld.lld --version
 
-      - name: Build host tools
-        run: |
-          make -C scripts/basic HOSTCC=gcc HOSTCXX=g++ -j$(nproc)
-
       - name: Build Kernel
         run: |
           chmod +x build.sh
