@@ -1,10 +1,8 @@
 name: build
 
 on:
-
   workflow_dispatch:
   push:
-
 
 jobs:
   build:
@@ -12,7 +10,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        device: [g84_gdx] #g84_ftx
+        device: [g84_gdx] #g84_fts
     name: "🚧 Build for ${{matrix.device}}"
 
     steps:
@@ -21,7 +19,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: szenius/set-timezone@v2.0
+      - name: Set Timezone
+        uses: szenius/set-timezone@v2.0
         with:
           timezoneLinux: "Europe/Paris"
 
@@ -35,32 +34,55 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            toolchain/clang
+            toolchain/clang-res
             toolchain/gcc64
             toolchain/gcc32
           key: ${{ runner.os }}-aosp-toolchain-r416155b
 
-      - name: Setup Toolchains
+      - name: Download AOSP Toolchains
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
           mkdir -p toolchain
-          cd toolchain
-          echo 'Download AOSP Toolchain'
-          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth 1 -b master clang-latest
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1
-          echo 'Done'
+          # Cloner Clang AOSP
+          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth 1 -b master toolchain/clang-tmp
+          # Isoler le dossier clang-rXXXX (le dossier clang-res sera détecté par build.sh)
+          mv toolchain/clang-tmp/clang-r* toolchain/clang-res
+          rm -rf toolchain/clang-tmp
+          # Cloner les binutils GCC
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
+
+      # Mise en cache de la compilation (ccache) pour gagner 20-30 min sur les prochains builds
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-kernel-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-kernel-ccache-
 
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 10
 
+      - name: Toolchain Diagnostic
+        run: |
+          echo "Vérification des outils :"
+          ls -d toolchain/clang-res/bin/ld.lld || echo "Clang introuvable !"
+          ls -d toolchain/gcc64/bin/aarch64-linux-android-gcc || echo "GCC64 introuvable !"
+
       - name: Run build
         run: |
-          DEVICE=${{matrix.device}} ./build.sh
+          # On s'assure que le script est exécutable
+          chmod +x build.sh
+          # Exécution du build
+          export USE_CCACHE=1
+          export CCACHE_DIR=~/.cache/ccache
+          DEVICE=${{matrix.device}} ./build.sh -c
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: LineageOS_Custom-${{matrix.device}}
-          path: AnyKernel3/O*.zip
+          name: LineageOS_AOSP-${{matrix.device}}-${{ github.run_id }}
+          path: "*.zip" # Le script build.sh déplace le zip à la racine à la fin
