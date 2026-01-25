@@ -82,35 +82,15 @@ jobs:
           echo "=== LLD ==="
           toolchain/proton-clang/bin/ld.lld --version
 
-      # =========================
-      # Run build
-      # =========================
-      - name: Run build
+      - name: Build host tools
+        run: |
+          make -C scripts/basic HOSTCC=gcc HOSTCXX=g++ -j$(nproc)
+
+      - name: Build Kernel
         run: |
           chmod +x build.sh
+          DEVICE=${{ matrix.device }} ./build.sh -d
 
-          export USE_CCACHE=1
-          export CCACHE_DIR=$HOME/.cache/ccache
-
-          export PATH=$PWD/toolchain/proton-clang/bin:$PATH
-          export PATH=$PWD/toolchain/gcc64/bin:$PWD/toolchain/gcc32/bin:$PATH
-
-          export CC=clang
-          export CXX=clang++
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
-
-          DEVICE=${{matrix.device}} ./build.sh -c
 
       # =========================
       # Upload
