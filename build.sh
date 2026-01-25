@@ -71,6 +71,10 @@ CROSS_COMPILE=aarch64-linux-gnu-
 KCFLAGS=-Wno-error
 "
 
+echo "🧹 Nettoyage de l'arbre source"
+make mrproper
+mkdir -p out
+
 # ==============================
 # Base defconfig
 # ==============================
