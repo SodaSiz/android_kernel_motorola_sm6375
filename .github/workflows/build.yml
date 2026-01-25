@@ -4,6 +4,8 @@ on:
 
   workflow_dispatch:
   push:
+
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,20 +25,35 @@ jobs:
         with:
           timezoneLinux: "Europe/Paris"
 
+      - name: Install dependencies
+        run: |
+          sudo apt udpate
+          sudo apt install bison flex libssl-dev libarchive-tools git -y
+
+      - name: Cache Toolchains
+        id: cache-toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchain/clang
+            toolchain/gcc64
+            toolchain/gcc32
+          key: ${{ runner.os }}-aosp-toolchain-r416155b
+
       - name: Setup Toolchains
         run: |
-          sudo apt update
-          sudo apt install bison flex libssl-dev libarchive-tools -y
           mkdir -p toolchain
           cd toolchain
-          echo 'Download antman and sync'
-          bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=05012024
+          echo 'Download AOSP Toolchain'
+          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth 1 -b master clang-latest
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1
           echo 'Done'
 
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 30
+          swap-size-gb: 10
 
       - name: Run build
         run: |

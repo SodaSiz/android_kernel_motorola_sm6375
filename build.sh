@@ -8,15 +8,19 @@
 SECONDS=0
 export KBUILD_BUILD_USER=SodaSiz
 
-PATH=$PWD/toolchain/bin:$PATH
+CLANG_DIR=$(pwd)/toolchain/clang/clang-r416155b
+GCC64_DIR=$(pwd)/toolchain/gcc64
+GCC32_DIR=$(pwd)/toolchain/gcc32
+
+# PATH=$PWD/toolchain/bin:$PATH
+export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
+
 export LLVM_DIR=$PWD/toolchain/bin
 export LLVM=1
 export AnyKernel3=AnyKernel3
 export TIME="$(date "+%Y%m%d")"
 export modpath=${AnyKernel3}/modules/vendor/lib/modules
-
 export ARCH=arm64
-
 if [ -z "$DEVICE" ]; then
 export DEVICE=g84_gdx
 fi
