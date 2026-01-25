@@ -42,15 +42,23 @@ jobs:
       - name: Download AOSP Toolchains
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
+          # Créer le dossier parent d'abord
           mkdir -p toolchain
-          # Cloner Clang AOSP
+          
+          # 1. Télécharger Clang dans un dossier temporaire
           git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth 1 -b master toolchain/clang-tmp
-          # Isoler le dossier clang-rXXXX (le dossier clang-res sera détecté par build.sh)
+          
+          # 2. Déplacer le dossier interne (ex: clang-r416155b) pour qu'il devienne 'toolchain/clang-res'
+          # On utilise 'mv' pour renommer le dossier trouvé
           mv toolchain/clang-tmp/clang-r* toolchain/clang-res
+          
+          # Nettoyage
           rm -rf toolchain/clang-tmp
-          # Cloner les binutils GCC
+          
+          # 3. Télécharger les GCC
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
+
 
       # Mise en cache de la compilation (ccache) pour gagner 20-30 min sur les prochains builds
       - name: Cache ccache
