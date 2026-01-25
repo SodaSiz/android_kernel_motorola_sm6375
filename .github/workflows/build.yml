@@ -6,80 +6,41 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     strategy:
       fail-fast: true
       matrix:
         device: [g84_gdx] #g84_fts
-    name: "🚧 Build for ${{matrix.device}}"
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Set Timezone
-        uses: szenius/set-timezone@v2.0
-        with:
-          timezoneLinux: "Europe/Paris"
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install bison flex libssl-dev libarchive-tools ccache bc python3 git -y
+          sudo apt install -y \
+            build-essential \
+            binutils \
+            bc \
+            bison \
+            flex \
+            libssl-dev \
+            ccache \
+            python3 \
+            zip
 
-      # =========================
-      # Cache Toolchains
-      # =========================
-      - name: Cache Toolchains
-        id: cache-toolchain
-        uses: actions/cache@v4
-        with:
-          path: |
-            toolchain/proton-clang
-            toolchain/gcc64
-            toolchain/gcc32
-          key: ${{ runner.os }}-proton-clang-toolchain-v1
-
-      # =========================
-      # Download Proton Clang
-      # =========================
-      - name: Download Proton Clang
-        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+      - name: Clone Proton Clang
         run: |
           mkdir -p toolchain
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/proton-clang
 
-          # GCC 4.9 (binutils / compat Android)
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain/gcc64
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain/gcc32
-
-      # =========================
-      # Cache ccache
-      # =========================
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-kernel-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-kernel-ccache-
-
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      # =========================
-      # Toolchain Diagnostic
-      # =========================
-      
-      - name: Toolchain Diagnostic
+      - name: Toolchain diagnostic
         run: |
-          echo "=== Proton Clang ==="
+          which ld
+          ld --version
           toolchain/proton-clang/bin/clang --version
-          echo "=== LLD ==="
           toolchain/proton-clang/bin/ld.lld --version
 
       - name: Build Kernel
@@ -87,10 +48,6 @@ jobs:
           chmod +x build.sh
           DEVICE=${{ matrix.device }} ./build.sh -d
 
-
-      # =========================
-      # Upload
-      # =========================
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
