@@ -1,0 +1,111 @@
+name: Build GKI Kernel (bangkk / holi)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      OUT_DIR: out
+      LLVM: 1
+      LLVM_IAS: 1
+      CC: clang
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison build-essential flex \
+            libssl-dev libelf-dev \
+            clang lld llvm \
+            python3 unzip zip
+
+      # -------------------------------------------------
+      # CLEAN STRICT (GKI compliant)
+      # -------------------------------------------------
+      - name: Clean output directory
+        run: |
+          rm -rf ${OUT_DIR}
+          mkdir -p ${OUT_DIR}
+
+      # -------------------------------------------------
+      # GKI BASE CONFIG (OUT ONLY)
+      # -------------------------------------------------
+      - name: Generate base GKI config
+        run: |
+          make O=${OUT_DIR} ARCH=${ARCH} gki_defconfig
+
+      # -------------------------------------------------
+      # MERGE HOLI + BANGKK (OUT ONLY)
+      # -------------------------------------------------
+      - name: Merge vendor configs
+        run: |
+          cp ${OUT_DIR}/.config ${OUT_DIR}/base.config
+
+          scripts/kconfig/merge_config.sh -m \
+            ${OUT_DIR}/base.config \
+            arch/arm64/configs/vendor/holi_GKI.config \
+            arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
+
+          mv .config ${OUT_DIR}/.config
+
+      # -------------------------------------------------
+      # FORCE GOODIX / DISABLE FTS (FINAL OVERRIDE)
+      # -------------------------------------------------
+      - name: Force Goodix touchscreen
+        run: |
+          cat >> ${OUT_DIR}/.config <<'EOF'
+          # Disable FTS touchscreen
+          # CONFIG_TOUCHSCREEN_FTS is not set
+          # CONFIG_TOUCHSCREEN_FTS_V3 is not set
+
+          # Enable Goodix
+          CONFIG_TOUCHSCREEN_GOODIX=y
+          CONFIG_TOUCHSCREEN_GOODIX_BRL_MMI=m
+          EOF
+
+      # -------------------------------------------------
+      # FINAL NORMALIZATION
+      # -------------------------------------------------
+      - name: Finalize config
+        run: |
+          make O=${OUT_DIR} ARCH=${ARCH} olddefconfig
+
+      # -------------------------------------------------
+      # SANITY CHECK (NO SOURCE POLLUTION)
+      # -------------------------------------------------
+      - name: Verify clean source tree
+        run: |
+          test ! -f .config
+          git status --porcelain
+
+      # -------------------------------------------------
+      # BUILD
+      # -------------------------------------------------
+      - name: Build kernel Image
+        run: |
+          make -j$(nproc) \
+            O=${OUT_DIR} \
+            ARCH=${ARCH} \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            Image
+
+      # -------------------------------------------------
+      # ARTIFACT
+      # -------------------------------------------------
+      - name: Upload kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-gki-bangkk
+          path: out/arch/arm64/boot/Image
