@@ -27,43 +27,37 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install bison flex libssl-dev libarchive-tools ccache bc python3 -y
+          sudo apt install bison flex libssl-dev libarchive-tools ccache bc python3 git -y
 
+      # =========================
+      # Cache Toolchains
+      # =========================
       - name: Cache Toolchains
         id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: |
-            toolchain/clang-res
+            toolchain/proton-clang
             toolchain/gcc64
             toolchain/gcc32
-          key: ${{ runner.os }}-aosp-toolchain-r416155b
+          key: ${{ runner.os }}-proton-clang-toolchain-v1
 
-      - name: Download AOSP Toolchain (Single Version)
+      # =========================
+      # Download Proton Clang
+      # =========================
+      - name: Download Proton Clang
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          mkdir -p toolchain/clang-res
-          
-          # 1. Clone partiel avec checkout immédiat du dossier
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 toolchain/clang-tmp
-          
-          # 2. Vérification et déplacement manuel (plus robuste que sparse-checkout ici)
-          if [ -d "toolchain/clang-tmp/clang-r416155b" ]; then
-              mv toolchain/clang-tmp/clang-r416155b/* toolchain/clang-res/
-              echo "✅ Clang r416155b extrait avec succès"
-          else
-              echo "❌ Erreur: Dossier clang-r416155b introuvable dans le dépôt."
-              ls -R toolchain/clang-tmp/ # Pour voir ce qui a été téléchargé
-              exit 1
-          fi
-          
-          # 3. Nettoyage
-          rm -rf toolchain/clang-tmp
-          
-          # 4. Télécharger les GCC (toujours nécessaires pour les headers)
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 --depth 1 toolchain/gcc64
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 --depth 1 toolchain/gcc32
-      # Mise en cache de la compilation (ccache) pour gagner 20-30 min sur les prochains builds
+          mkdir -p toolchain
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/proton-clang
+
+          # GCC 4.9 (binutils / compat Android)
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain/gcc64
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain/gcc32
+
+      # =========================
+      # Cache ccache
+      # =========================
       - name: Cache ccache
         uses: actions/cache@v4
         with:
@@ -77,23 +71,55 @@ jobs:
         with:
           swap-size-gb: 10
 
+      # =========================
+      # Toolchain Diagnostic
+      # =========================
       - name: Toolchain Diagnostic
         run: |
-          echo "Vérification des outils :"
-          ls -d toolchain/clang-res/bin/ld.lld || echo "Clang introuvable !"
-          ls -d toolchain/gcc64/bin/aarch64-linux-android-gcc || echo "GCC64 introuvable !"
+          echo "=== Proton Clang ==="
+          toolchain/proton-clang/bin/clang --version || exit 1
 
+          echo "=== GCC aarch64 ==="
+          toolchain/gcc64/bin/aarch64-linux-android-gcc --version || exit 1
+
+          echo "=== GCC arm ==="
+          toolchain/gcc32/bin/arm-linux-androideabi-gcc --version || exit 1
+
+      # =========================
+      # Run build
+      # =========================
       - name: Run build
         run: |
-          # On s'assure que le script est exécutable
           chmod +x build.sh
-          # Exécution du build
+
           export USE_CCACHE=1
-          export CCACHE_DIR=~/.cache/ccache
+          export CCACHE_DIR=$HOME/.cache/ccache
+
+          export PATH=$PWD/toolchain/proton-clang/bin:$PATH
+          export PATH=$PWD/toolchain/gcc64/bin:$PWD/toolchain/gcc32/bin:$PATH
+
+          export CC=clang
+          export CXX=clang++
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
           DEVICE=${{matrix.device}} ./build.sh -c
 
+      # =========================
+      # Upload
+      # =========================
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: LineageOS_AOSP-${{matrix.device}}-${{ github.run_id }}
-          path: "*.zip" # Le script build.sh déplace le zip à la racine à la fin
+          name: LineageOS_ProtonClang-${{matrix.device}}-${{ github.run_id }}
+          path: "*.zip"

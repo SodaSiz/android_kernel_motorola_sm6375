@@ -1,128 +1,167 @@
 #!/bin/bash
+set -e
 
-# --- Configuration de KernelSU-Next ---
-# Si tu souhaites l'activer, décommente les lignes ci-dessous
-# [ ! -d "KernelSU-Next" ] && git submodule add https://github.com/tiann/KernelSU-Next
-# [ -e "KernelSU-Next/kernel/setup.sh" ] && source KernelSU-Next/kernel/setup.sh
+# ==================================================
+# Kernel build script — Proton Clang / Android 5.4
+# ==================================================
 
 SECONDS=0
 export KBUILD_BUILD_USER=SodaSiz
-export ROOT_DIR=$(pwd)
+export ROOT_DIR="$(pwd)"
 
-# --- Détection de la Toolchain (Dynamique) ---
-# On cherche le dossier clang qui commence par "clang-r" dans toolchain
-CLANG_DIR=$(ls -d $ROOT_DIR/toolchain/clang/clang-r* 2>/dev/null | head -n 1)
-GCC64_DIR=$ROOT_DIR/toolchain/gcc64
-GCC32_DIR=$ROOT_DIR/toolchain/gcc32
+# --------------------------------------------------
+# Toolchain detection (Proton Clang)
+# --------------------------------------------------
+CLANG_DIR="$ROOT_DIR/toolchain/proton-clang"
+GCC64_DIR="$ROOT_DIR/toolchain/gcc64"
+GCC32_DIR="$ROOT_DIR/toolchain/gcc32"
 
-# Vérification de sécurité
-if [ -z "$CLANG_DIR" ] || [ ! -d "$GCC64_DIR" ]; then
-    echo "ERROR: Toolchain non trouvée dans $ROOT_DIR/toolchain/"
-    echo "Vérifie tes étapes de téléchargement dans le YAML."
+if [ ! -x "$CLANG_DIR/bin/clang" ]; then
+    echo "ERROR: Proton Clang introuvable dans $CLANG_DIR"
     exit 1
 fi
 
-# Mise à jour du PATH (Priorité à Clang AOSP)
+if [ ! -d "$GCC64_DIR" ]; then
+    echo "ERROR: GCC64 introuvable dans $GCC64_DIR"
+    exit 1
+fi
+
+# --------------------------------------------------
+# PATH & LLVM configuration
+# --------------------------------------------------
 export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
 
-# Force l'export du linker pour Kconfig (Fix 'ld.lld not found' error)
-export LD=ld.lld
-
-# Vérification du bon fonctionnement du PATH
-if ! command -v ld.lld &> /dev/null; then
-    echo "ERROR: ld.lld est introuvable dans le PATH !"
-    exit 1
-fi
-
-# --- Variables Globales ---
 export LLVM=1
 export LLVM_IAS=1
 export ARCH=arm64
 export SUBARCH=arm64
-export AnyKernel3_DIR=$ROOT_DIR/AnyKernel3
-export TIME="$(date "+%Y%m%d")"
-export modpath=${AnyKernel3_DIR}/modules/vendor/lib/modules
 
-[ -z "$DEVICE" ] && export DEVICE=g84_gdx
+# --------------------------------------------------
+# Project paths
+# --------------------------------------------------
+export AnyKernel3_DIR="$ROOT_DIR/AnyKernel3"
+export TIME="$(date '+%Y%m%d')"
+export modpath="$AnyKernel3_DIR/modules/vendor/lib/modules"
 
-# --- Nettoyage ---
-if [[ -z "$1" || "$1" = "-c" ]]; then
-    echo "------- Clean Build -------"
+[ -z "$DEVICE" ] && export DEVICE="g84_gdx"
+
+# --------------------------------------------------
+# Build mode
+# --------------------------------------------------
+if [[ -z "$1" || "$1" == "-c" ]]; then
+    echo "======= Clean Build ======="
     rm -rf out modules
-elif [ "$1" = "-d" ]; then
-    echo "------- Dirty Build -------"
+elif [[ "$1" == "-d" ]]; then
+    echo "======= Dirty Build ======="
 else
-    echo "Erreur: Utilise -c (clean) ou -d (dirty)"
+    echo "Usage: $0 [-c | -d]"
     exit 1
 fi
 
-# --- Arguments de compilation ---
-# Note: On utilise les noms de binaires car ils sont dans le PATH
+# --------------------------------------------------
+# Diagnostic (important en CI)
+# --------------------------------------------------
+echo "======= TOOLCHAIN INFO ======="
+clang --version
+ld.lld --version
+aarch64-linux-android-gcc --version || true
+arm-linux-androideabi-gcc --version || true
+echo "=============================="
+
+# --------------------------------------------------
+# Make arguments
+# --------------------------------------------------
 ARGS="
-CC=clang \
-LD=ld.lld \
-AR=llvm-ar \
-NM=llvm-nm \
-AS=llvm-as \
-OBJCOPY=llvm-objcopy \
-OBJDUMP=llvm-objdump \
-READELF=llvm-readelf \
-OBJSIZE=llvm-size \
-STRIP=llvm-strip \
-LLVM_AR=llvm-ar \
-LLVM_DIS=llvm-dis \
-LLVM_NM=llvm-nm \
-LLVM=1 \
-LLVM_IAS=1 \
-CROSS_COMPILE=aarch64-linux-android- \
-CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-CLANG_TRIPLE=aarch64-linux-gnu- \
-KCFLAGS=-Wno-error \
+CC=clang
+LD=ld.lld
+AR=llvm-ar
+NM=llvm-nm
+OBJCOPY=llvm-objcopy
+OBJDUMP=llvm-objdump
+READELF=llvm-readelf
+OBJSIZE=llvm-size
+STRIP=llvm-strip
+LLVM=1
+LLVM_IAS=1
+CLANG_TRIPLE=aarch64-linux-gnu-
+CROSS_COMPILE=aarch64-linux-android-
+CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+KCFLAGS=-Wno-error
 "
 
-echo "------- Génération de la Config -------"
-# Fusion des fichiers de config (GKI + Motorola + Bangkk)
-make O=out ${ARGS} gki_defconfig vendor/holi_GKI.config vendor/ext_config/lineageos_moto-holi.config vendor/ext_config/moto-holi-bangkk.config
+# --------------------------------------------------
+# Kernel config
+# --------------------------------------------------
+echo "======= Génération de la configuration ======="
+make O=out ${ARGS} \
+    gki_defconfig \
+    vendor/holi_GKI.config \
+    vendor/ext_config/lineageos_moto-holi.config \
+    vendor/ext_config/moto-holi-bangkk.config
 
-echo "------- Compilation du Kernel -------"
-make O=out ${ARGS} -j$(nproc --all)
+# --------------------------------------------------
+# Kernel build
+# --------------------------------------------------
+echo "======= Compilation du kernel ======="
+make O=out ${ARGS} -j"$(nproc --all)"
 
-# Vérification du succès
-if [ ! -e "out/arch/arm64/boot/Image" ]; then
-    echo "ERROR: Compilation échouée ! Fichier Image absent."
+if [ ! -f "out/arch/arm64/boot/Image" ]; then
+    echo "ERROR: Image du kernel absente"
     exit 1
 fi
 
-echo "------- Compilation des Modules -------"
-# On installe les modules dans un dossier temporaire 'modules'
-make O=out ${ARGS} -j$(nproc --all) INSTALL_MOD_PATH=../modules INSTALL_MOD_STRIP=1 modules_install
+# --------------------------------------------------
+# Modules
+# --------------------------------------------------
+echo "======= Compilation des modules ======="
+make O=out ${ARGS} \
+    -j"$(nproc --all)" \
+    INSTALL_MOD_PATH="$ROOT_DIR/modules" \
+    INSTALL_MOD_STRIP=1 \
+    modules_install
 
-# --- Packaging AnyKernel3 ---
-echo "------- Packaging AnyKernel3 -------"
-rm -rf ${modpath}/*
-mkdir -p ${modpath}
+# --------------------------------------------------
+# AnyKernel3 packaging
+# --------------------------------------------------
+echo "======= Packaging AnyKernel3 ======="
 
-# Copie du Noyau et des DTB/DTBO
-cp out/arch/arm64/boot/Image ${AnyKernel3_DIR}/Image
-[ -e out/arch/arm64/boot/dtb ] && cp out/arch/arm64/boot/dtb ${AnyKernel3_DIR}/dtb
-[ -e out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img ${AnyKernel3_DIR}/dtbo.img
+rm -rf "$modpath"
+mkdir -p "$modpath"
 
-# Extraction et copie des modules (.ko)
-find modules/lib/modules/ -name '*.ko' -exec cp {} ${modpath}/ \;
+# Kernel + DT
+cp out/arch/arm64/boot/Image "$AnyKernel3_DIR/Image"
 
-# Génération des fichiers de chargement des modules
-if [ -d "modules/lib/modules" ]; then
-    MOD_INTERNAL_DIR=$(ls -d modules/lib/modules/5.4*)
-    cp ${MOD_INTERNAL_DIR}/modules.{alias,dep,softdep} ${modpath}/
-    # Création du modules.load simplifié pour Android
-    cat ${MOD_INTERNAL_DIR}/modules.order | sed 's/.*\///' | sed 's/\.ko$//' > ${modpath}/modules.load
+[ -f out/arch/arm64/boot/dtb ] && \
+    cp out/arch/arm64/boot/dtb "$AnyKernel3_DIR/dtb"
+
+[ -f out/arch/arm64/boot/dtbo.img ] && \
+    cp out/arch/arm64/boot/dtbo.img "$AnyKernel3_DIR/dtbo.img"
+
+# Modules
+find modules/lib/modules -name '*.ko' -exec cp {} "$modpath/" \;
+
+MOD_INTERNAL_DIR=$(ls -d modules/lib/modules/5.4* 2>/dev/null | head -n 1)
+
+if [ -d "$MOD_INTERNAL_DIR" ]; then
+    cp "$MOD_INTERNAL_DIR"/modules.{alias,dep,softdep} "$modpath"/
+
+    cat "$MOD_INTERNAL_DIR/modules.order" \
+        | sed 's|.*/||' \
+        | sed 's/\.ko$//' \
+        > "$modpath/modules.load"
 fi
 
-# Création du ZIP final
-cd ${AnyKernel3_DIR}
+# --------------------------------------------------
+# Zip
+# --------------------------------------------------
+cd "$AnyKernel3_DIR"
 ZIP_NAME="O_KERNEL_${DEVICE}_${TIME}.zip"
-zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder
-mv "$ZIP_NAME" ..
 
-echo -e "\n✅ Compilation terminée avec succès en $((SECONDS / 60))m $((SECONDS % 60))s"
-cd ..
+zip -r9 "$ZIP_NAME" . \
+    -x .git README.md '*placeholder'
+
+mv "$ZIP_NAME" "$ROOT_DIR"
+cd "$ROOT_DIR"
+
+echo
+echo "✅ Build terminé avec succès en $((SECONDS / 60))m $((SECONDS % 60))s"
