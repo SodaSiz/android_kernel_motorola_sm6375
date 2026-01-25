@@ -70,11 +70,6 @@ CLANG_TRIPLE=aarch64-linux-gnu-
 CROSS_COMPILE=aarch64-linux-gnu-
 KCFLAGS=-Wno-error
 "
-
-echo "🧹 Nettoyage de l'arbre source"
-make mrproper
-mkdir -p out
-
 # ==============================
 # Base defconfig
 # ==============================
@@ -88,6 +83,10 @@ scripts/kconfig/merge_config.sh -m \
     arch/arm64/configs/vendor/holi_GKI.config \
     arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
     arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
+
+echo "🧹 Nettoyage de l'arbre source"
+make mrproper
+
 
 # ==============================
 # Finalize config
