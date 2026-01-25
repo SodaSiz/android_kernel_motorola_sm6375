@@ -1,100 +1,106 @@
 #!/bin/bash
-[ ! -e " KernelSU-Next/kernel/setup.sh" ] && git submodule init && git submodule update
 
-
-# [ ! -d "toolchain" ] && echo  "installing toolchain..." && mkdir -p toolchain && cd toolchain && echo 'Download antman and sync' && bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=11032023 && echo 'Patch for glibc' && bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") --patch=glibc && echo 'Done'
-
+# Init submodules pour KernelSU-Next
+# [ ! -e "KernelSU-Next/kernel/setup.sh" ] && git submodule init && git submodule update
 
 SECONDS=0
 export KBUILD_BUILD_USER=SodaSiz
 
+# Chemins vers les Toolchains (On utilise les variables définies par le script ou le PATH)
 CLANG_DIR=$(pwd)/toolchain/clang/clang-r416155b
 GCC64_DIR=$(pwd)/toolchain/gcc64
 GCC32_DIR=$(pwd)/toolchain/gcc32
 
-# PATH=$PWD/toolchain/bin:$PATH
+# Mise à jour du PATH pour être sûr
 export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
 
-export LLVM_DIR=$PWD/toolchain/bin
 export LLVM=1
+export LLVM_IAS=1
 export AnyKernel3=AnyKernel3
 export TIME="$(date "+%Y%m%d")"
 export modpath=${AnyKernel3}/modules/vendor/lib/modules
 export ARCH=arm64
+export SUBARCH=arm64
+
 if [ -z "$DEVICE" ]; then
-export DEVICE=g84_gdx
+    export DEVICE=g84_gdx
 fi
 
-
-# if [[ -z "$KSU" || "$KSU" = "0" ]]; then // KSU=0 // export KSUSTAT= // elif [ "$KSU" = "1" ]; then // CONFIG_KSU=ksu.config // export KSUSTAT=_KSU // else // echo "Error: Set KSU to 0 or 1 to build" // exit 1 // fi // export KSU
-
-
-
+# Gestion du nettoyage
 if [[ -z "$1" || "$1" = "-c" ]]; then
-echo "Clean Build"
-rm -rf out
+    echo "Clean Build"
+    rm -rf out
 elif [ "$1" = "-d" ]; then
-echo "Dirty Build"
+    echo "Dirty Build"
 else
-echo "Error: Set $1 to -c or -d"
-exit 1
+    echo "Error: Set $1 to -c or -d"
+    exit 1
 fi
 
-ARGS='
-CC=clang
-LD='${LLVM_DIR}/ld.lld'
-ARCH=arm64
-AR='${LLVM_DIR}/llvm-ar'
-NM='${LLVM_DIR}/llvm-nm'
-AS='${LLVM_DIR}/llvm-as'
-CROSS_COMPILE='${LLVM_DIR}/aarch64-linux-gnu'
-CROSS_COMPILE_COMPAT='${LLVM_DIR}/arm-linux-gnueabi'
-OBJCOPY='${LLVM_DIR}/llvm-objcopy'
-OBJDUMP='${LLVM_DIR}/llvm-objdump'
-READELF='${LLVM_DIR}/llvm-readelf'
-OBJSIZE='${LLVM_DIR}/llvm-size'
-STRIP='${LLVM_DIR}/llvm-strip'
-LLVM_AR='${LLVM_DIR}/llvm-ar'
-LLVM_DIS='${LLVM_DIR}/llvm-dis'
-LLVM_NM='${LLVM_DIR}/llvm-nm'
-LLVM=1
-LLVM_IAS=1
-'
+# Définition propre des arguments de compilation
+# On utilise directement les noms des binaires car ils sont dans le PATH
+ARGS="
+CC=clang \
+LD=ld.lld \
+AR=llvm-ar \
+NM=llvm-nm \
+AS=llvm-as \
+OBJCOPY=llvm-objcopy \
+OBJDUMP=llvm-objdump \
+READELF=llvm-readelf \
+OBJSIZE=llvm-size \
+STRIP=llvm-strip \
+LLVM_AR=llvm-ar \
+LLVM_DIS=llvm-dis \
+LLVM_NM=llvm-nm \
+LLVM=1 \
+LLVM_IAS=1 \
+CROSS_COMPILE=aarch64-linux-android- \
+CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+CLANG_TRIPLE=aarch64-linux-gnu-
+"
 
-make ${ARGS} O=out gki_defconfig vendor/holi_GKI.config vendor/ext_config/lineageos_moto-holi.config vendor/ext_config/moto-holi-bangkk.config
-make ${ARGS} O=out -j$(nproc)
+echo "------- Config Génération -------"
+# Note: On utilise 'make' avec les arguments définis au-dessus
+make O=out ${ARGS} gki_defconfig vendor/holi_GKI.config vendor/ext_config/lineageos_moto-holi.config vendor/ext_config/moto-holi-bangkk.config
 
-[ ! -e "out/arch/arm64/boot/Image" ] && \
-echo "  ERROR : image binary not found in any of the specified locations , fix compile!" && \
-exit 1
+echo "------- Compilation du Kernel -------"
+make O=out ${ARGS} -j$(nproc --all)
 
-make O=out ${ARGS} -j$(nproc) INSTALL_MOD_PATH=modules INSTALL_MOD_STRIP=1 modules_install
+# Vérification
+if [ ! -e "out/arch/arm64/boot/Image" ]; then
+    echo "ERROR: Kernel image not found! Compilation failed."
+    exit 1
+fi
 
-#Clean Up
+echo "------- Compilation des Modules -------"
+make O=out ${ARGS} -j$(nproc --all) INSTALL_MOD_PATH=../modules INSTALL_MOD_STRIP=1 modules_install
+
+# --- Reste du script (Packaging AnyKernel3) ---
+# Nettoyage AnyKernel
 rm -rf ${modpath}/*
-rm -rf ${AnyKernel3}/{Image, dtb, dtbo.img}
-rm -rf ${AnyKernel3}/*.zip
+rm -f ${AnyKernel3}/{Image,dtb,dtbo.img}
 
-#Setup
 mkdir -p ${modpath}
-kver=$(make kernelversion)
-kmod=$(echo ${kver} | awk -F'.' '{print $3}')
 
-#Copy stuff
-cp out/.config ${AnyKernel3}/config
+# Copie des fichiers générés
 cp out/arch/arm64/boot/Image ${AnyKernel3}/Image
-cp out/arch/arm64/boot/dtb.img ${AnyKernel3}/dtb
-cp out/arch/arm64/boot/dtbo.img ${AnyKernel3}/dtbo.img
-#cp build.sta/${DEVICE}_modules.blocklist ${modpath}/modules.blocklist
-cp $(find out/modules/lib/modules/5.4* -name '*.ko') ${modpath}/
-cp out/modules/lib/modules/5.4*/modules.{alias,dep,softdep} ${modpath}/
-cp out/modules/lib/modules/5.4*/modules.order ${modpath}/modules.load
+[ -e out/arch/arm64/boot/dtb ] && cp out/arch/arm64/boot/dtb ${AnyKernel3}/dtb
+[ -e out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img ${AnyKernel3}/dtbo.img
 
-#Edit
-sed -i 's/\(kernel\/[^: ]*\/\)\([^: ]*\.ko\)/\/vendor\/lib\/modules\/\2/g' ${modpath}/modules.dep
-#sed -i 's/.*\//.ko/g' ${AnyKernel3}/modules/vendor/lib/modules/modules.load
-#sed -i 's#.*/##; s/\.ko$//' ${AnyKernel3}/modules/vendor/lib/modules/modules.load
-sed -i 's/.*\///; s/\.ko$//' ${modpath}/modules.load
+# Installation des modules .ko dans AnyKernel3
+find out/modules/lib/modules/ -name '*.ko' -exec cp {} ${modpath}/ \;
+
+# Génération des fichiers de dépendances modules
+cd out/modules/lib/modules/*-*-*
+cp modules.{alias,dep,softdep} ../../../../${modpath}/
+cat modules.order | sed 's/.*\///' | sed 's/\.ko$//' > ../../../../${modpath}/modules.load
+cd ../../../../../
+
+# Zip final
+cd ${AnyKernel3}
+zip -r9 O_KERNEL_${DEVICE}-${TIME}.zip * -x .git README.md
+echo -e "\nCompleted in $((SECONDS / 60))m $((SECONDS % 60))s"
 
 #source build.sta/${DEVICE}_mdconf
 #for useles_modules in "${modules_to_nuke[@]}"; do
