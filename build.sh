@@ -42,17 +42,11 @@ export LLVM_IAS=1
 [ -z "$DEVICE" ] && export DEVICE="g84_gdx"
 
 # ==============================
-# Clean / Dirty
+# CLEAN SOURCE TREE (CRITIQUE)
 # ==============================
-if [[ -z "$1" || "$1" == "-c" ]]; then
-    echo "🧹 Nettoyage complet"
-    make mrproper
-    rm -rf out modules
-elif [[ "$1" != "-d" ]]; then
-    echo "Usage: -c (clean) | -d (dirty)"
-    exit 1
-fi
-
+echo "🧹 Nettoyage COMPLET de l'arbre source"
+make mrproper
+rm -rf out modules
 mkdir -p out
 
 # ==============================
@@ -118,3 +112,4 @@ make O=out ${MAKE_ARGS} \
     -j$(nproc)
 
 echo "✅ Build terminé en $((SECONDS/60))m $((SECONDS%60))s"
+
