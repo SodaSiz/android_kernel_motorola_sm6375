@@ -24,7 +24,7 @@ export ARCH=arm64
 export SUBARCH=arm64
 
 # ==============================
-# Host tools (IMPORTANT)
+# Host tools
 # ==============================
 export HOSTCC=gcc
 export HOSTCXX=g++
@@ -45,11 +45,15 @@ export LLVM_IAS=1
 # Clean / Dirty
 # ==============================
 if [[ -z "$1" || "$1" == "-c" ]]; then
+    echo "🧹 Nettoyage complet"
+    make mrproper
     rm -rf out modules
 elif [[ "$1" != "-d" ]]; then
     echo "Usage: -c (clean) | -d (dirty)"
     exit 1
 fi
+
+mkdir -p out
 
 # ==============================
 # Make args
@@ -70,34 +74,34 @@ CLANG_TRIPLE=aarch64-linux-gnu-
 CROSS_COMPILE=aarch64-linux-gnu-
 KCFLAGS=-Wno-error
 "
+
 # ==============================
 # Base defconfig
 # ==============================
 make O=out ${MAKE_ARGS} gki_defconfig
 
 # ==============================
-# Merge vendor fragments (CRITIQUE)
+# Merge vendor fragments
 # ==============================
 scripts/kconfig/merge_config.sh -m \
     out/.config \
     arch/arm64/configs/vendor/holi_GKI.config \
     arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
     arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
-		arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
-
-echo "🧹 Nettoyage de l'arbre source"
-make mrproper
-
+    arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
 
 # ==============================
 # Finalize config
 # ==============================
 make O=out ${MAKE_ARGS} olddefconfig
 
-# Temp Check for Audio and RMNET QMI
-grep QMI out/.config
-grep RMNET out/.config
-grep SND_SOC_QCOM_APR out/.config
+# ==============================
+# Debug checks (NON BLOQUANTS)
+# ==============================
+echo "🔍 Vérification QMI / RMNET / AUDIO"
+grep QMI out/.config || true
+grep RMNET out/.config || true
+grep SND_SOC_QCOM_APR out/.config || true
 
 # ==============================
 # Build kernel
@@ -113,5 +117,4 @@ make O=out ${MAKE_ARGS} \
     modules_install \
     -j$(nproc)
 
-echo "Build terminé en $((SECONDS/60))m $((SECONDS%60))s"
-
+echo "✅ Build terminé en $((SECONDS/60))m $((SECONDS%60))s"
