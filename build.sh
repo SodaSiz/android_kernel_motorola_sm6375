@@ -82,7 +82,14 @@ scripts/kconfig/merge_config.sh -m \
     out/.config \
     arch/arm64/configs/vendor/holi_GKI.config \
     arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
-    arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config
+    arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
+		arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
+
+# Temp Check for Audio and RMNET QMI
+grep QMI out/.config
+grep RMNET out/.config
+grep SND_SOC_QCOM_APR out/.config
+
 
 echo "🧹 Nettoyage de l'arbre source"
 make mrproper
