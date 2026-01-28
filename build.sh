@@ -10,10 +10,10 @@ export ROOT_DIR=$(pwd)
 # ==============================
 CLANG_DIR="$ROOT_DIR/toolchain/proton-clang"
 
-if [ ! -x "$CLANG_DIR/bin/clang" ]; then
+[ ! -x "$CLANG_DIR/bin/clang" ] && {
     echo "ERROR: Proton Clang introuvable"
     exit 1
-fi
+}
 
 export PATH="$CLANG_DIR/bin:$PATH"
 
@@ -42,9 +42,9 @@ export LLVM_IAS=1
 [ -z "$DEVICE" ] && export DEVICE="g84_gdx"
 
 # ==============================
-# CLEAN SOURCE TREE (CRITIQUE)
+# CLEAN SOURCE TREE (OBLIGATOIRE)
 # ==============================
-echo "🧹 Nettoyage COMPLET de l'arbre source"
+echo "🧹 Nettoyage COMPLET"
 make mrproper
 rm -rf out modules
 mkdir -p out
@@ -70,32 +70,24 @@ KCFLAGS=-Wno-error
 "
 
 # ==============================
-# Base defconfig
+# Base config (SANS O=out)
 # ==============================
-make O=out ${MAKE_ARGS} gki_defconfig
+make ${MAKE_ARGS} gki_defconfig
 
 # ==============================
-# Merge vendor fragments
+# Merge vendor fragments (SANS O=out)
 # ==============================
 scripts/kconfig/merge_config.sh -m \
-    out/.config \
+    .config \
     arch/arm64/configs/vendor/holi_GKI.config \
     arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
     arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
     arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
 
 # ==============================
-# Finalize config
+# Finalize config → vers out/
 # ==============================
 make O=out ${MAKE_ARGS} olddefconfig
-
-# ==============================
-# Debug checks (NON BLOQUANTS)
-# ==============================
-echo "🔍 Vérification QMI / RMNET / AUDIO"
-grep QMI out/.config || true
-grep RMNET out/.config || true
-grep SND_SOC_QCOM_APR out/.config || true
 
 # ==============================
 # Build kernel
