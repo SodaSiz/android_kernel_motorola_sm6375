@@ -48,9 +48,19 @@ jobs:
           chmod +x build.sh
           DEVICE=${{ matrix.device }} ./build.sh -d
 
-      - name: Upload kernel
+      - name: Build AnyKernel3 Flashable ZIP
+        run: |
+          # DEVICE=${{ matrix.device }} ./build_zip.sh -d
+          echo "Insha Allah this will works in the future :D"
+
+      - name: Upload AnyKernel3 ZIP File
         uses: actions/upload-artifact@v4
         with:
           name: LineageOS_ProtonClang-${{matrix.device}}-${{ github.run_id }}
           path: "*.zip"
-
+      
+      - name: Upload Kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image
+          path: "out/arch/arm64/boot/Image"
