@@ -29,7 +29,7 @@ export LLVM=1
 export LLVM_IAS=1
 
 # ==============================
-# Make args (Ajout de O=out ici pour être systématique)
+# Make args
 # ==============================
 MAKE_ARGS="
 O=out
@@ -47,26 +47,31 @@ CROSS_COMPILE=aarch64-linux-gnu-
 KCFLAGS=-Wno-error
 "
 
-# 1. Nettoyage de sécurité (pour éviter l'erreur source tree not clean)
+# 1. Nettoyage de sécurité
 make clean
 make mrproper
 rm -rf out && mkdir -p out
 
 echo "Build des configs"
 
-# 2. Base config (On dirige vers out/)
+# 2. Base config : On commence par la base GKI standard
 make ${MAKE_ARGS} gki_defconfig
 
-# 3. Merge vendor fragments
-# Note : On merge vers out/.config et non .config à la racine
+# 3. Utilisation de ton fichier moto.config (Ancien config.gz)
+# On commente les anciens merges spécifiques au vendor "holi"
+# KCONFIG_CONFIG=out/.config scripts/kconfig/merge_config.sh -m -O out/ \
+#     out/.config \
+#     arch/arm64/configs/vendor/holi_GKI.config \
+#     arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
+#     arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
+#     arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
+
+echo "Fusion du fichier moto.config personnalisé..."
 KCONFIG_CONFIG=out/.config scripts/kconfig/merge_config.sh -m -O out/ \
     out/.config \
-    arch/arm64/configs/vendor/holi_GKI.config \
-    arch/arm64/configs/vendor/ext_config/lineage_moto-holi.config \
-    arch/arm64/configs/vendor/ext_config/moto-holi-bangkk.config \
-    arch/arm64/configs/vendor/ext_config/fix_vendor_symbols.config
+    arch/arm64/configs/vendor/moto.config
 
-# 4. Finalize config
+# 4. Finalize config (vérifie les dépendances et met à jour le .config)
 make ${MAKE_ARGS} olddefconfig
 
 echo "Build du kernel"

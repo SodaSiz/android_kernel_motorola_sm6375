@@ -59,6 +59,17 @@ jobs:
           name: LineageOS_ProtonClang-${{matrix.device}}-${{ github.run_id }}
           path: "*.zip"
       
+      - name: Archive out directory
+        run: |
+          zip -r kernel_out_full.zip out/
+
+      - name: Upload Full Out Directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: Full-Out-Directory-${{ matrix.device }}
+          path: kernel_out_full.zip
+          retention-days: 5 # Optionnel : limite la durée de stockage pour économiser ton quota
+
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
