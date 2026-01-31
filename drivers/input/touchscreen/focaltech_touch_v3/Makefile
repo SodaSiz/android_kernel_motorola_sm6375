@@ -1,3 +1,4 @@
+ccflags-y += -Idrivers/input/touchscreen/focaltech_touch_v3
 all: modules
 
 modules:
